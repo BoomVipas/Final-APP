@@ -1,7 +1,8 @@
 {
   "expo": {
-    "name": "pillo-app",
-    "slug": "pillo-app",
+    "name": "PILLo",
+    "slug": "pillo-caregiver",
+    "scheme": "pillo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -12,7 +13,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "th.ac.saensuk.pillo"
     },
     "android": {
       "adaptiveIcon": {
@@ -21,10 +23,21 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "th.ac.saensuk.pillo"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-notifications",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "PILLo ต้องการสิทธิ์เข้าถึงกล้องเพื่อสแกนฉลากยา"
+        }
+      ]
+    ]
   }
 }
