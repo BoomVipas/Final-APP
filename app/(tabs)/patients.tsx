@@ -133,7 +133,7 @@ function BottomNav({ onHome, onWard, onProfile }: { onHome: () => void; onWard: 
           <Text className="text-[11px] leading-[16px] text-[#2F2F2F] mt-1.5">Profile</Text>
         </TouchableOpacity>
       </View>
-      <View className="h-1.5 w-32 rounded-full bg-black self-center mt-4" />
+      <View className="h-1.5 w-32 rounded-full self-center mt-4" />
     </View>
   )
 }

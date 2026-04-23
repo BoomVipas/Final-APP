@@ -500,7 +500,7 @@ function BottomNav({
         </TouchableOpacity>
       </View>
 
-      <View className="h-1.5 w-32 rounded-full bg-black self-center mt-4" />
+      <View className="h-1.5 w-32 rounded-full self-center mt-4" />
     </View>
   )
 }

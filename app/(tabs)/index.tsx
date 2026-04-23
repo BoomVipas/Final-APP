@@ -372,7 +372,7 @@ function BottomNav({ onHome, onWard, onProfile }: { onHome: () => void; onWard: 
           <Text style={{ fontSize: 11, color: '#2F2F2F', marginTop: 6 }}>Profile</Text>
         </TouchableOpacity>
       </View>
-      <View style={{ height: 6, width: 128, borderRadius: 999, backgroundColor: '#000000', alignSelf: 'center', marginTop: 16 }} />
+      <View style={{ height: 6, width: 128, borderRadius: 999, alignSelf: 'center', marginTop: 16 }} />
     </View>
   )
 }
