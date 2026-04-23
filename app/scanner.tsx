@@ -7,15 +7,18 @@
  *   2. Capture photo (base64)
  *   3. Send to OpenAI GPT-4o vision → structured MedScanResult
  *   4. Review + edit form (pre-filled by AI)
- *   5. Save to `medicines` table (upserts by name); shows duplicate notice if exists
+ *   5. Save to `medicines` table; check for duplicates by English name
+ *   6. Success screen → optionally assign to a patient (creates patient_prescription)
  */
 
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   Text,
   TextInput,
@@ -29,6 +32,8 @@ import { Ionicons } from '@expo/vector-icons'
 import { Button } from '../src/components/ui/Button'
 import { analyzeMedicationLabel, type MedScanResult } from '../src/lib/openai'
 import { supabase } from '../src/lib/supabase'
+import { useAuthStore } from '../src/stores/authStore'
+import type { MealTime, PatientsRow } from '../src/types/database'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -51,6 +56,13 @@ const FORM_OPTIONS: { value: DosageForm; label: string; emoji: string }[] = [
   { value: 'powder',      label: 'Powder',      emoji: '🫙' },
 ]
 
+const MEAL_TIMES: { value: MealTime; label: string; emoji: string }[] = [
+  { value: 'morning', label: 'Morning',  emoji: '🌅' },
+  { value: 'noon',    label: 'Noon',     emoji: '☀️' },
+  { value: 'evening', label: 'Evening',  emoji: '🌆' },
+  { value: 'bedtime', label: 'Bedtime',  emoji: '🌙' },
+]
+
 interface ReviewForm {
   name_th: string
   name_en: string
@@ -69,6 +81,225 @@ const EMPTY_FORM: ReviewForm = {
 }
 
 type ScreenState = 'camera' | 'analyzing' | 'review' | 'success'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Assign to Patient modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AssignModalProps {
+  visible: boolean
+  medicineId: string
+  medicineName: string
+  wardId: string
+  onClose: () => void
+  onAssigned: (patientName: string) => void
+}
+
+function AssignToPatientModal({ visible, medicineId, medicineName, wardId, onClose, onAssigned }: AssignModalProps) {
+  const [patients, setPatients] = useState<PatientsRow[]>([])
+  const [loadingPatients, setLoadingPatients] = useState(false)
+  const [selectedPatient, setSelectedPatient] = useState<PatientsRow | null>(null)
+  const [doseQty, setDoseQty] = useState('1')
+  const [selectedMealTimes, setSelectedMealTimes] = useState<MealTime[]>([])
+  const [saving, setSaving] = useState(false)
+  const [step, setStep] = useState<'pick' | 'config'>('pick')
+
+  useEffect(() => {
+    if (!visible) return
+    setStep('pick')
+    setSelectedPatient(null)
+    setSelectedMealTimes([])
+    setDoseQty('1')
+
+    const load = async () => {
+      setLoadingPatients(true)
+      const query = supabase
+        .from('patients')
+        .select('id, name, photo_url, room_number, ward_id, status, date_of_birth, notes, created_at, updated_at')
+        .eq('status', 'active')
+        .order('name', { ascending: true })
+
+      const { data } = wardId ? await query.eq('ward_id', wardId) : await query
+      setPatients(data ?? [])
+      setLoadingPatients(false)
+    }
+    load()
+  }, [visible, wardId])
+
+  const toggleMealTime = (mt: MealTime) => {
+    setSelectedMealTimes((prev) =>
+      prev.includes(mt) ? prev.filter((t) => t !== mt) : [...prev, mt],
+    )
+  }
+
+  const handleAssign = async () => {
+    if (!selectedPatient) return
+    if (selectedMealTimes.length === 0) {
+      Alert.alert('Select meal time', 'Please select at least one meal time.')
+      return
+    }
+
+    const qty = parseInt(doseQty, 10)
+    if (!qty || qty < 1) {
+      Alert.alert('Invalid dose', 'Please enter a valid dose quantity.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const { error } = await supabase.from('patient_prescriptions').insert({
+        patient_id:   selectedPatient.id,
+        medicine_id:  medicineId,
+        dose_quantity: qty,
+        meal_times:   selectedMealTimes,
+        start_date:   today,
+        is_active:    true,
+      })
+      if (error) throw error
+      onAssigned(selectedPatient.name)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to assign prescription'
+      Alert.alert('Error', msg)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable className="flex-1 bg-black/40" onPress={onClose}>
+        <View className="flex-1" />
+        <Pressable onPress={() => {}} className="bg-[#FFF9F2] rounded-t-[32px] px-5 pt-5 pb-8" style={{ maxHeight: '80%' }}>
+          {/* Header */}
+          <View className="flex-row items-center justify-between mb-4">
+            <View className="flex-1 mr-3">
+              <Text className="text-xs font-semibold uppercase tracking-widest text-[#8E4B14]">
+                {step === 'pick' ? 'Assign to Patient' : 'Set Prescription'}
+              </Text>
+              <Text className="text-lg font-bold text-[#2E241B] mt-1" numberOfLines={1}>
+                {step === 'pick' ? medicineName : `For ${selectedPatient?.name ?? ''}`}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} className="w-9 h-9 rounded-full bg-[#F0E8DE] items-center justify-center">
+              <Ionicons name="close" size={18} color="#5E5145" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Step 1: pick patient */}
+          {step === 'pick' && (
+            <>
+              {loadingPatients ? (
+                <View className="py-10 items-center">
+                  <ActivityIndicator color="#C96B1A" />
+                  <Text className="text-sm text-[#7D6E60] mt-3">Loading patients...</Text>
+                </View>
+              ) : patients.length === 0 ? (
+                <View className="py-10 items-center">
+                  <Text className="text-4xl mb-3">🏥</Text>
+                  <Text className="text-sm text-[#7D6E60] text-center">No active patients found in this ward.</Text>
+                </View>
+              ) : (
+                <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+                  {patients.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      onPress={() => { setSelectedPatient(p); setStep('config') }}
+                      className="flex-row items-center py-3.5 border-b border-[#F0E8DE]"
+                    >
+                      <View className="w-10 h-10 rounded-full bg-[#F6EBDD] items-center justify-center mr-3">
+                        <Text className="text-base">👤</Text>
+                      </View>
+                      <View className="flex-1">
+                        <Text className="text-sm font-semibold text-[#2E241B]">{p.name}</Text>
+                        {p.room_number ? (
+                          <Text className="text-xs text-[#7D6E60] mt-0.5">Room {p.room_number}</Text>
+                        ) : null}
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color="#C4B5A8" />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+            </>
+          )}
+
+          {/* Step 2: configure prescription */}
+          {step === 'config' && selectedPatient && (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Back to patient list */}
+              <TouchableOpacity
+                onPress={() => setStep('pick')}
+                className="flex-row items-center mb-4"
+              >
+                <Ionicons name="arrow-back" size={16} color="#8E4B14" />
+                <Text className="text-sm text-[#8E4B14] ml-1">Change patient</Text>
+              </TouchableOpacity>
+
+              {/* Dose quantity */}
+              <Text className="text-xs font-semibold text-[#7D6E60] uppercase tracking-wide mb-2">
+                Dose Quantity
+              </Text>
+              <View className="flex-row items-center bg-[#F6EBDD] rounded-2xl px-4 py-3 mb-5">
+                <TouchableOpacity
+                  onPress={() => setDoseQty((v) => String(Math.max(1, parseInt(v, 10) - 1)))}
+                  className="w-9 h-9 rounded-full bg-white items-center justify-center"
+                >
+                  <Ionicons name="remove" size={18} color="#8E4B14" />
+                </TouchableOpacity>
+                <TextInput
+                  value={doseQty}
+                  onChangeText={setDoseQty}
+                  keyboardType="numeric"
+                  className="flex-1 text-center text-lg font-bold text-[#2E241B]"
+                />
+                <TouchableOpacity
+                  onPress={() => setDoseQty((v) => String(parseInt(v, 10) + 1))}
+                  className="w-9 h-9 rounded-full bg-white items-center justify-center"
+                >
+                  <Ionicons name="add" size={18} color="#8E4B14" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Meal times */}
+              <Text className="text-xs font-semibold text-[#7D6E60] uppercase tracking-wide mb-2">
+                Meal Times
+              </Text>
+              <View className="flex-row flex-wrap gap-2 mb-6">
+                {MEAL_TIMES.map((mt) => {
+                  const active = selectedMealTimes.includes(mt.value)
+                  return (
+                    <TouchableOpacity
+                      key={mt.value}
+                      onPress={() => toggleMealTime(mt.value)}
+                      className={`flex-row items-center px-4 py-2.5 rounded-2xl border ${
+                        active ? 'bg-[#FFF0DD] border-[#C96B1A]' : 'bg-white border-[#E8D5C4]'
+                      }`}
+                    >
+                      <Text className="mr-1.5">{mt.emoji}</Text>
+                      <Text className={`text-sm font-semibold ${active ? 'text-[#8E4B14]' : 'text-[#6F6254]'}`}>
+                        {mt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+
+              <Button
+                title={saving ? 'Assigning...' : 'Assign Prescription'}
+                onPress={handleAssign}
+                variant="primary"
+                loading={saving}
+                disabled={saving || selectedMealTimes.length === 0}
+              />
+              <View className="h-2" />
+            </ScrollView>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  )
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
@@ -149,6 +380,7 @@ function FormDropdown({
 
 export default function ScannerScreen() {
   const router = useRouter()
+  const { user } = useAuthStore()
   const [permission, requestPermission] = useCameraPermissions()
   const cameraRef = useRef<CameraView>(null)
 
@@ -158,6 +390,8 @@ export default function ScannerScreen() {
   const [savedMedId, setSavedMedId]     = useState<string | null>(null)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [isDuplicate, setIsDuplicate]   = useState(false)
+  const [showAssign, setShowAssign]     = useState(false)
+  const [assignedTo, setAssignedTo]     = useState<string | null>(null)
 
   const updateField = (field: keyof ReviewForm, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -212,7 +446,6 @@ export default function ScannerScreen() {
 
     setSaving(true)
     try {
-      // Combined name: "ชื่อภาษาไทย / English Name" or whichever is available
       const combinedName = nameTh && nameEn
         ? `${nameTh} / ${nameEn}`
         : nameTh || nameEn
@@ -221,11 +454,10 @@ export default function ScannerScreen() {
         ? `${form.strength} ${form.unit}`.trim()
         : form.strength
 
-      // Check for existing medicine with the same English name
       const { data: existing } = await supabase
         .from('medicines')
         .select('id, name')
-        .ilike('name', `%${nameEn}%`)
+        .ilike('name', `%${nameEn || nameTh}%`)
         .limit(1)
         .maybeSingle()
 
@@ -237,7 +469,6 @@ export default function ScannerScreen() {
         return
       }
 
-      // Insert new medicine
       const { data: inserted, error } = await supabase
         .from('medicines')
         .insert({
@@ -245,9 +476,9 @@ export default function ScannerScreen() {
           dosage_form:  form.dosage_form || null,
           strength:     strength || null,
           description:  [
-            form.frequency   ? `Frequency: ${form.frequency}`   : null,
-            form.quantity    ? `Quantity: ${form.quantity}`      : null,
-            form.hospital    ? `Issued by: ${form.hospital}`     : null,
+            form.frequency ? `Frequency: ${form.frequency}` : null,
+            form.quantity  ? `Quantity: ${form.quantity}`   : null,
+            form.hospital  ? `Issued by: ${form.hospital}`  : null,
           ].filter(Boolean).join(' | ') || null,
         })
         .select('id')
@@ -257,6 +488,7 @@ export default function ScannerScreen() {
 
       setIsDuplicate(false)
       setSavedMedId(inserted?.id ?? null)
+      setAssignedTo(null)
       setScreenState('success')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Save failed'
@@ -302,7 +534,6 @@ export default function ScannerScreen() {
     return (
       <SafeAreaView className="flex-1 bg-black">
         <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back">
-          {/* Top bar */}
           <View className="flex-row items-center px-4 pt-4">
             <TouchableOpacity
               onPress={() => router.back()}
@@ -313,46 +544,23 @@ export default function ScannerScreen() {
             <Text className="text-white font-semibold text-base ml-3">Scan Medication Label</Text>
           </View>
 
-          {/* Dimmed overlay with transparent frame hole */}
           <View className="flex-1 items-center justify-center">
             <View style={{ alignItems: 'center' }}>
-              {/* Top dim */}
               <View style={{ width: '100%', height: 40, backgroundColor: 'rgba(0,0,0,0.45)' }} />
               <View style={{ flexDirection: 'row' }}>
-                {/* Left dim */}
                 <View style={{ width: 40, height: 190, backgroundColor: 'rgba(0,0,0,0.45)' }} />
-                {/* Frame */}
-                <View
-                  style={{
-                    width: 300,
-                    height: 190,
-                    borderWidth: 2.5,
-                    borderColor: '#E8721A',
-                    borderRadius: 14,
-                  }}
-                >
-                  {/* Corner accents */}
+                <View style={{ width: 300, height: 190, borderWidth: 2.5, borderColor: '#E8721A', borderRadius: 14 }}>
                   {[
                     { top: -2, left: -2, borderTopWidth: 4, borderLeftWidth: 4 },
                     { top: -2, right: -2, borderTopWidth: 4, borderRightWidth: 4 },
                     { bottom: -2, left: -2, borderBottomWidth: 4, borderLeftWidth: 4 },
                     { bottom: -2, right: -2, borderBottomWidth: 4, borderRightWidth: 4 },
                   ].map((style, i) => (
-                    <View
-                      key={i}
-                      style={{
-                        position: 'absolute',
-                        width: 22, height: 22,
-                        borderColor: '#E8721A',
-                        ...style,
-                      }}
-                    />
+                    <View key={i} style={{ position: 'absolute', width: 22, height: 22, borderColor: '#E8721A', ...style }} />
                   ))}
                 </View>
-                {/* Right dim */}
                 <View style={{ width: 40, height: 190, backgroundColor: 'rgba(0,0,0,0.45)' }} />
               </View>
-              {/* Bottom dim */}
               <View style={{ width: '100%', height: 40, backgroundColor: 'rgba(0,0,0,0.45)' }} />
             </View>
 
@@ -366,19 +574,13 @@ export default function ScannerScreen() {
             )}
           </View>
 
-          {/* Bottom: capture button */}
           <View className="items-center pb-12">
             <TouchableOpacity
               onPress={handleCapture}
               style={{
-                width: 76,
-                height: 76,
-                borderRadius: 38,
-                backgroundColor: '#E8721A',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: 4,
-                borderColor: 'rgba(255,255,255,0.7)',
+                width: 76, height: 76, borderRadius: 38,
+                backgroundColor: '#E8721A', alignItems: 'center', justifyContent: 'center',
+                borderWidth: 4, borderColor: 'rgba(255,255,255,0.7)',
               }}
             >
               <Ionicons name="camera" size={30} color="white" />
@@ -404,19 +606,20 @@ export default function ScannerScreen() {
         <Text className="text-sm text-gray-500 text-center leading-5">
           AI is analyzing the medication label.{'\n'}This usually takes 3–5 seconds.
         </Text>
-
-        {/* Progress steps */}
         <View className="mt-10 w-full">
           {[
-            { icon: '📸', text: 'Photo captured' },
-            { icon: '🤖', text: 'Sending to GPT-4o Vision' },
-            { icon: '📋', text: 'Extracting medication details' },
+            { icon: '📸', text: 'Photo captured', done: true },
+            { icon: '🤖', text: 'Sending to GPT-4o Vision', done: false },
+            { icon: '📋', text: 'Extracting medication details', done: false },
           ].map((step, i) => (
             <View key={i} className="flex-row items-center mb-3">
               <Text className="text-lg mr-3">{step.icon}</Text>
               <Text className="text-sm text-gray-600">{step.text}</Text>
-              {i < 1 && <Ionicons name="checkmark-circle" size={16} color="#22C55E" style={{ marginLeft: 'auto' }} />}
-              {i === 1 && <ActivityIndicator size="small" color="#E8721A" style={{ marginLeft: 'auto' }} />}
+              {step.done
+                ? <Ionicons name="checkmark-circle" size={16} color="#22C55E" style={{ marginLeft: 'auto' }} />
+                : i === 1
+                ? <ActivityIndicator size="small" color="#E8721A" style={{ marginLeft: 'auto' }} />
+                : null}
             </View>
           ))}
         </View>
@@ -430,47 +633,92 @@ export default function ScannerScreen() {
 
   if (screenState === 'success') {
     const displayName = [form.name_th, form.name_en].filter(Boolean).join(' / ') || 'Medicine'
+
     return (
-      <SafeAreaView className="flex-1 bg-[#FFF9F1] items-center justify-center px-8">
-        <View className={`w-20 h-20 rounded-[24px] items-center justify-center mb-6 ${isDuplicate ? 'bg-blue-50' : 'bg-green-50'}`}>
-          <Text className="text-4xl">{isDuplicate ? 'ℹ️' : '✅'}</Text>
-        </View>
-
-        <Text className="text-xl font-bold text-gray-900 text-center mb-2">
-          {isDuplicate ? 'Already in Database' : 'Saved Successfully'}
-        </Text>
-        <Text className="text-sm text-gray-500 text-center mb-1">{displayName}</Text>
-        {form.strength ? (
-          <Text className="text-xs text-gray-400 text-center mb-6">
-            {form.strength} {form.unit} · {form.dosage_form}
-          </Text>
-        ) : null}
-
-        {isDuplicate && (
-          <View className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-6 w-full">
-            <Text className="text-sm text-blue-700 text-center">
-              This medication is already recorded in the system. No duplicate was created.
-            </Text>
+      <SafeAreaView className="flex-1 bg-[#FFF9F1] px-6">
+        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingVertical: 40 }}>
+          {/* Status icon */}
+          <View className={`w-20 h-20 rounded-[24px] items-center justify-center mb-6 self-center ${isDuplicate ? 'bg-blue-50' : 'bg-green-50'}`}>
+            <Text className="text-4xl">{isDuplicate ? 'ℹ️' : '✅'}</Text>
           </View>
-        )}
 
-        <Button
-          title="Scan Another Label"
-          onPress={() => {
-            setForm(EMPTY_FORM)
-            setSavedMedId(null)
-            setIsDuplicate(false)
-            setScreenState('camera')
-          }}
-          variant="primary"
-          className="w-full mb-3"
-        />
-        <Button
-          title="Back to Home"
-          onPress={() => router.back()}
-          variant="secondary"
-          className="w-full"
-        />
+          <Text className="text-xl font-bold text-gray-900 text-center mb-1">
+            {isDuplicate ? 'Already in Database' : 'Saved Successfully'}
+          </Text>
+          <Text className="text-sm font-semibold text-gray-700 text-center mb-1">{displayName}</Text>
+          {form.strength ? (
+            <Text className="text-xs text-gray-400 text-center mb-5">
+              {form.strength} {form.unit} · {form.dosage_form}
+            </Text>
+          ) : <View className="mb-5" />}
+
+          {isDuplicate && (
+            <View className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-5">
+              <Text className="text-sm text-blue-700 text-center">
+                This medication is already in the system. No duplicate was created.
+              </Text>
+            </View>
+          )}
+
+          {/* Assigned confirmation */}
+          {assignedTo && (
+            <View className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 mb-5 flex-row items-center">
+              <Text className="text-lg mr-2">✅</Text>
+              <Text className="text-sm text-green-700 flex-1">
+                Prescription assigned to <Text className="font-bold">{assignedTo}</Text>
+              </Text>
+            </View>
+          )}
+
+          {/* Assign to patient — only if we have a medicine ID */}
+          {savedMedId && !assignedTo && (
+            <TouchableOpacity
+              onPress={() => setShowAssign(true)}
+              className="bg-[#FFF0DD] border border-[#E8CFB0] rounded-2xl px-4 py-4 mb-4 flex-row items-center"
+            >
+              <View className="w-10 h-10 rounded-full bg-[#F6EBDD] items-center justify-center mr-3">
+                <Ionicons name="person-add-outline" size={20} color="#8E4B14" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-sm font-bold text-[#2E241B]">Assign to Patient</Text>
+                <Text className="text-xs text-[#7D6E60] mt-0.5">Create a prescription for a patient in this ward</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#C4B5A8" />
+            </TouchableOpacity>
+          )}
+
+          <Button
+            title="Scan Another Label"
+            onPress={() => {
+              setForm(EMPTY_FORM)
+              setSavedMedId(null)
+              setIsDuplicate(false)
+              setAssignedTo(null)
+              setScreenState('camera')
+            }}
+            variant="primary"
+            className="mb-3"
+          />
+          <Button
+            title="Back to Home"
+            onPress={() => router.back()}
+            variant="secondary"
+          />
+        </ScrollView>
+
+        {savedMedId && (
+          <AssignToPatientModal
+            visible={showAssign}
+            medicineId={savedMedId}
+            medicineName={displayName}
+            wardId={user?.ward_id ?? ''}
+            onClose={() => setShowAssign(false)}
+            onAssigned={(name) => {
+              setShowAssign(false)
+              setAssignedTo(name)
+            }}
+          />
+        )}
       </SafeAreaView>
     )
   }
@@ -482,7 +730,6 @@ export default function ScannerScreen() {
   return (
     <SafeAreaView className="flex-1 bg-[#F8F7F5]">
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        {/* Header */}
         <View className="flex-row items-center px-4 pt-4 pb-3 bg-white border-b border-gray-100">
           <TouchableOpacity onPress={handleRetake} className="w-10 h-10 items-center justify-center">
             <Ionicons name="arrow-back" size={22} color="#4B5563" />
@@ -494,20 +741,15 @@ export default function ScannerScreen() {
         </View>
 
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
-          {/* Confidence banner */}
-          {form.confidence < 0.85 && (
+          {form.confidence < 0.85 ? (
             <View className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex-row items-start">
               <Text className="text-lg mr-2">⚠️</Text>
               <View className="flex-1">
                 <Text className="text-sm font-semibold text-amber-800">Low confidence ({Math.round(form.confidence * 100)}%)</Text>
-                <Text className="text-xs text-amber-700 mt-0.5">
-                  The label may have been partially obscured. Please review every field carefully before saving.
-                </Text>
+                <Text className="text-xs text-amber-700 mt-0.5">Please review every field carefully before saving.</Text>
               </View>
             </View>
-          )}
-
-          {form.confidence >= 0.85 && (
+          ) : (
             <View className="bg-green-50 border border-green-100 rounded-xl p-3 mb-4 flex-row items-center">
               <Text className="text-lg mr-2">✅</Text>
               <Text className="text-sm text-green-700 font-medium">
@@ -516,92 +758,38 @@ export default function ScannerScreen() {
             </View>
           )}
 
-          {/* Medication names */}
           <Text className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 mt-1">Medication Name</Text>
           <View className="bg-white rounded-2xl border border-gray-100 p-4 mb-4">
-            <FormField
-              label="Thai Name (ชื่อภาษาไทย)"
-              value={form.name_th}
-              onChangeText={(v) => updateField('name_th', v)}
-              placeholder="e.g. อะม็อกซีซิลลิน"
-            />
-            <FormField
-              label="English / Generic Name"
-              value={form.name_en}
-              onChangeText={(v) => updateField('name_en', v)}
-              placeholder="e.g. Amoxicillin"
-            />
+            <FormField label="Thai Name (ชื่อภาษาไทย)" value={form.name_th} onChangeText={(v) => updateField('name_th', v)} placeholder="e.g. อะม็อกซีซิลลิน" />
+            <FormField label="English / Generic Name" value={form.name_en} onChangeText={(v) => updateField('name_en', v)} placeholder="e.g. Amoxicillin" />
           </View>
 
-          {/* Dosage */}
           <Text className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Dosage</Text>
           <View className="bg-white rounded-2xl border border-gray-100 p-4 mb-4">
             <View className="flex-row gap-3">
               <View className="flex-1">
-                <FormField
-                  label="Strength"
-                  value={form.strength}
-                  onChangeText={(v) => updateField('strength', v)}
-                  placeholder="500"
-                  keyboardType="numeric"
-                />
+                <FormField label="Strength" value={form.strength} onChangeText={(v) => updateField('strength', v)} placeholder="500" keyboardType="numeric" />
               </View>
               <View className="flex-1">
-                <FormField
-                  label="Unit"
-                  value={form.unit}
-                  onChangeText={(v) => updateField('unit', v)}
-                  placeholder="mg"
-                />
+                <FormField label="Unit" value={form.unit} onChangeText={(v) => updateField('unit', v)} placeholder="mg" />
               </View>
             </View>
-            <FormDropdown
-              label="Medication Form"
-              value={form.dosage_form}
-              onSelect={(v) => setForm((prev) => ({ ...prev, dosage_form: v }))}
-            />
+            <FormDropdown label="Medication Form" value={form.dosage_form} onSelect={(v) => setForm((prev) => ({ ...prev, dosage_form: v }))} />
           </View>
 
-          {/* Instructions */}
           <Text className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Instructions</Text>
           <View className="bg-white rounded-2xl border border-gray-100 p-4 mb-4">
-            <FormField
-              label="Frequency"
-              value={form.frequency}
-              onChangeText={(v) => updateField('frequency', v)}
-              placeholder="e.g. 3 times daily after meals"
-            />
-            <FormField
-              label="Total Quantity"
-              value={form.quantity}
-              onChangeText={(v) => updateField('quantity', v)}
-              placeholder="e.g. 30 tablets"
-              keyboardType="numeric"
-            />
+            <FormField label="Frequency" value={form.frequency} onChangeText={(v) => updateField('frequency', v)} placeholder="e.g. 3 times daily after meals" />
+            <FormField label="Total Quantity" value={form.quantity} onChangeText={(v) => updateField('quantity', v)} placeholder="e.g. 30 tablets" keyboardType="numeric" />
           </View>
 
-          {/* Source */}
           <Text className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Source</Text>
           <View className="bg-white rounded-2xl border border-gray-100 p-4 mb-6">
-            <FormField
-              label="Hospital / Pharmacy"
-              value={form.hospital}
-              onChangeText={(v) => updateField('hospital', v)}
-              placeholder="e.g. Saensuk Healthcare Center"
-            />
+            <FormField label="Hospital / Pharmacy" value={form.hospital} onChangeText={(v) => updateField('hospital', v)} placeholder="e.g. Saensuk Healthcare Center" />
           </View>
 
-          <Button
-            title={saving ? 'Saving...' : 'Save to Database'}
-            onPress={handleSave}
-            variant="primary"
-            loading={saving}
-            disabled={saving}
-          />
-          <TouchableOpacity
-            onPress={handleRetake}
-            className="items-center justify-center min-h-[48px] mt-2"
-          >
+          <Button title={saving ? 'Saving...' : 'Save to Database'} onPress={handleSave} variant="primary" loading={saving} disabled={saving} />
+          <TouchableOpacity onPress={handleRetake} className="items-center justify-center min-h-[48px] mt-2">
             <Text className="text-sm text-gray-400">Retake Photo</Text>
           </TouchableOpacity>
         </ScrollView>

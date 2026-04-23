@@ -22,10 +22,10 @@ interface MedicationCardProps {
 
 function getStatusBadge(status: ScheduleItem['status']): { status: BadgeStatus; label: string } {
   switch (status) {
-    case 'confirmed': return { status: 'confirmed', label: '✅ จ่ายแล้ว' }
-    case 'refused':   return { status: 'refused',   label: '❌ ปฏิเสธ' }
-    case 'skipped':   return { status: 'missed',    label: '⏭ ข้าม' }
-    default:          return { status: 'pending',   label: '⏳ รอ' }
+    case 'confirmed': return { status: 'confirmed', label: '✅ Given' }
+    case 'refused':   return { status: 'refused',   label: '❌ Refused' }
+    case 'skipped':   return { status: 'missed',    label: '⏭ Skipped' }
+    default:          return { status: 'pending',   label: '⏳ Pending' }
   }
 }
 
@@ -50,12 +50,12 @@ export function MedicationCard({ item, showPatientName = false, onConfirm, onPre
       {showPatientName && (
         <Text className="text-sm text-[#5E5145] mb-1.5">
           {item.patient_name}
-          {item.room_number ? `  •  ห้อง ${item.room_number}` : ''}
+          {item.room_number ? `  •  Room ${item.room_number}` : ''}
         </Text>
       )}
 
       <Text className="text-sm text-[#5E5145] mb-1">
-        {item.dose_quantity} เม็ด
+        {item.dose_quantity} dose
         {item.dosage_form ? `  •  ${item.dosage_form}` : ''}
       </Text>
 
@@ -67,13 +67,13 @@ export function MedicationCard({ item, showPatientName = false, onConfirm, onPre
 
       {item.conflict_flag && (
         <View className="bg-[#FBE4E1] rounded-2xl p-3 mb-2">
-          <Text className="text-xs font-semibold text-[#A3322A]">⚠️ ตรวจพบการจ่ายซ้ำ</Text>
+          <Text className="text-xs font-semibold text-[#A3322A]">⚠️ Duplicate dose detected</Text>
         </View>
       )}
 
       {canConfirm && (
         <Button
-          title="ยืนยันจ่ายยา"
+          title="Confirm Medication"
           onPress={() => onConfirm(item)}
           variant="primary"
           compact
@@ -83,7 +83,7 @@ export function MedicationCard({ item, showPatientName = false, onConfirm, onPre
 
       {item.conflict_flag && item.status === 'pending' && (
         <View className="bg-[#FBE4E1] rounded-2xl py-2.5 px-3 mt-1 items-center">
-          <Text className="text-xs font-semibold text-[#A3322A]">🚫 บล็อกเนื่องจากซ้ำ</Text>
+          <Text className="text-xs font-semibold text-[#A3322A]">🚫 Blocked — duplicate dose</Text>
         </View>
       )}
     </Card>
