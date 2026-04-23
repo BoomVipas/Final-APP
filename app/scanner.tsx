@@ -24,16 +24,16 @@ import { Card } from '../src/components/ui/Card'
 type MedForm = 'tablet' | 'capsule' | 'liquid' | 'injection' | 'patch' | 'inhaler' | 'drops' | 'cream' | 'suppository' | 'powder'
 
 const FORM_OPTIONS: { value: MedForm; label: string }[] = [
-  { value: 'tablet', label: 'ยาเม็ด' },
-  { value: 'capsule', label: 'แคปซูล' },
-  { value: 'liquid', label: 'ยาน้ำ' },
-  { value: 'injection', label: 'ยาฉีด' },
-  { value: 'patch', label: 'แผ่นแปะ' },
-  { value: 'inhaler', label: 'พ่นสูด' },
-  { value: 'drops', label: 'ยาหยอด' },
-  { value: 'cream', label: 'ครีม' },
-  { value: 'suppository', label: 'ยาเหน็บ' },
-  { value: 'powder', label: 'ยาผง' },
+  { value: 'tablet', label: 'Tablet' },
+  { value: 'capsule', label: 'Capsule' },
+  { value: 'liquid', label: 'Liquid' },
+  { value: 'injection', label: 'Injection' },
+  { value: 'patch', label: 'Patch' },
+  { value: 'inhaler', label: 'Inhaler' },
+  { value: 'drops', label: 'Drops' },
+  { value: 'cream', label: 'Cream' },
+  { value: 'suppository', label: 'Suppository' },
+  { value: 'powder', label: 'Powder' },
 ]
 
 interface ScannedData {
@@ -108,7 +108,7 @@ function FormDropdown({
         className="bg-white border border-gray-200 rounded-xl px-3 min-h-[48px] flex-row items-center justify-between"
       >
         <Text className={`text-sm ${current ? 'text-gray-800' : 'text-gray-400'}`}>
-          {current ? current.label : 'เลือกรูปแบบยา'}
+          {current ? current.label : 'Select medication form'}
         </Text>
         <Text className="text-gray-400">▾</Text>
       </TouchableOpacity>
@@ -158,16 +158,16 @@ export default function ScannerScreen() {
         dosage: '500',
         unit: 'mg',
         form: 'capsule',
-        frequency: 'วันละ 3 ครั้ง',
+        frequency: '3 times daily',
         quantity: '30',
-        hospital: 'โรงพยาบาลเซ็นทรัล',
+        hospital: 'Central Hospital',
         confidence: 0.82,
       })
 
       setScreenState('review')
     } catch (err) {
       setScreenState('camera')
-      Alert.alert('เกิดข้อผิดพลาด', 'ไม่สามารถถ่ายภาพได้ กรุณาลองใหม่')
+      Alert.alert('Capture failed', 'Unable to take the photo. Please try again.')
     }
   }
 
@@ -177,19 +177,19 @@ export default function ScannerScreen() {
   }
 
   const handleSave = async () => {
-    if (!formData.name_th.trim()) {
-      Alert.alert('กรุณากรอกข้อมูล', 'ต้องระบุชื่อยา (ภาษาไทย)')
+    if (!formData.name_en.trim() && !formData.name_th.trim()) {
+      Alert.alert('Missing medication name', 'Please enter at least one medication name before saving.')
       return
     }
     setSaving(true)
     try {
       // In production: create prescription via Supabase
       await new Promise((r) => setTimeout(r, 800))
-      Alert.alert('บันทึกสำเร็จ', 'เพิ่มข้อมูลยาเรียบร้อยแล้ว', [
-        { text: 'ตกลง', onPress: () => router.back() },
+      Alert.alert('Saved', 'Medication information has been added.', [
+        { text: 'OK', onPress: () => router.back() },
       ])
     } catch {
-      Alert.alert('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้')
+      Alert.alert('Save failed', 'Unable to save the medication information.')
     } finally {
       setSaving(false)
     }
@@ -214,12 +214,12 @@ export default function ScannerScreen() {
       <SafeAreaView className="flex-1 bg-white items-center justify-center px-6">
         <Text className="text-4xl mb-4">📷</Text>
         <Text className="text-base font-bold text-gray-900 text-center mb-2">
-          ต้องการสิทธิ์กล้อง
+          Camera Permission Required
         </Text>
         <Text className="text-sm text-gray-500 text-center mb-6">
-          แอปต้องการสิทธิ์เข้าถึงกล้องเพื่อสแกนฉลากยา
+          The app needs camera access to scan medication labels.
         </Text>
-        <Button title="อนุญาตการใช้กล้อง" onPress={requestPermission} variant="primary" />
+        <Button title="Allow Camera Access" onPress={requestPermission} variant="primary" />
       </SafeAreaView>
     )
   }
@@ -230,7 +230,7 @@ export default function ScannerScreen() {
       <SafeAreaView className="flex-1 bg-black">
         <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back">
           {/* Frame guide overlay */}
-          <View className="flex-1 items-center justify-center">
+          <View className="flex-1 items-center" style={{ paddingTop: 260 }}>
             <View
               style={{
                 width: 280,
@@ -242,7 +242,7 @@ export default function ScannerScreen() {
               }}
             />
             <Text className="text-white text-xs mt-3 text-center px-8">
-              วางฉลากยาภายในกรอบ แล้วกดถ่ายภาพ
+              Place the medication label inside the frame, then take a photo.
             </Text>
           </View>
 
@@ -261,7 +261,7 @@ export default function ScannerScreen() {
                 borderColor: 'white',
               }}
             >
-              <Text className="text-white text-sm font-bold">ถ่าย</Text>
+              <Text className="text-white text-sm font-bold">Capture</Text>
             </TouchableOpacity>
           </View>
         </CameraView>
@@ -274,9 +274,9 @@ export default function ScannerScreen() {
     return (
       <SafeAreaView className="flex-1 bg-white items-center justify-center px-6">
         <ActivityIndicator size="large" color="#E8721A" />
-        <Text className="text-base font-semibold text-gray-800 mt-4">กำลังวิเคราะห์...</Text>
+        <Text className="text-base font-semibold text-gray-800 mt-4">Analyzing...</Text>
         <Text className="text-sm text-gray-500 mt-1 text-center">
-          AI กำลังอ่านฉลากยา กรุณารอสักครู่
+          AI is reading the medication label. Please wait.
         </Text>
       </SafeAreaView>
     )
@@ -295,24 +295,24 @@ export default function ScannerScreen() {
             <View className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4 flex-row items-start">
               <Text className="text-lg mr-2">⚠️</Text>
               <View className="flex-1">
-                <Text className="text-sm font-semibold text-yellow-800">ความมั่นใจต่ำ</Text>
+                <Text className="text-sm font-semibold text-yellow-800">Low confidence</Text>
                 <Text className="text-xs text-yellow-700 mt-0.5">
-                  ({Math.round(formData.confidence * 100)}%) กรุณาตรวจสอบข้อมูลก่อนบันทึก
+                  ({Math.round(formData.confidence * 100)}%) Please review the information before saving.
                 </Text>
               </View>
             </View>
           )}
 
-          <Text className="text-base font-bold text-gray-900 mb-3">ตรวจสอบข้อมูล</Text>
+          <Text className="text-base font-bold text-gray-900 mb-3">Review Information</Text>
 
           <FormField
-            label="ชื่อยา (ภาษาไทย)"
+            label="Medication Name (Thai)"
             value={formData.name_th}
             onChangeText={(v) => updateField('name_th', v)}
-            placeholder="เช่น อะม็อกซีซิลลิน"
+            placeholder="e.g. อะม็อกซีซิลลิน"
           />
           <FormField
-            label="ชื่อยา (ภาษาอังกฤษ)"
+            label="Medication Name (English)"
             value={formData.name_en}
             onChangeText={(v) => updateField('name_en', v)}
             placeholder="e.g. Amoxicillin"
@@ -321,53 +321,53 @@ export default function ScannerScreen() {
           <View className="flex-row gap-2 mb-0">
             <View className="flex-1">
               <FormField
-                label="ขนาดยา"
+                label="Dosage"
                 value={formData.dosage}
                 onChangeText={(v) => updateField('dosage', v)}
-                placeholder="เช่น 500"
+                placeholder="e.g. 500"
                 keyboardType="numeric"
               />
             </View>
             <View className="flex-1">
               <FormField
-                label="หน่วย"
+                label="Unit"
                 value={formData.unit}
                 onChangeText={(v) => updateField('unit', v)}
-                placeholder="เช่น mg"
+                placeholder="e.g. mg"
               />
             </View>
           </View>
 
           <FormDropdown
-            label="รูปแบบยา"
+            label="Medication Form"
             value={formData.form}
             onSelect={(v) => setFormData((prev) => ({ ...prev, form: v }))}
           />
 
           <FormField
-            label="ความถี่"
+            label="Frequency"
             value={formData.frequency}
             onChangeText={(v) => updateField('frequency', v)}
-            placeholder="เช่น วันละ 3 ครั้ง"
+            placeholder="e.g. 3 times daily"
           />
 
           <FormField
-            label="จำนวน"
+            label="Quantity"
             value={formData.quantity}
             onChangeText={(v) => updateField('quantity', v)}
-            placeholder="เช่น 30"
+            placeholder="e.g. 30"
             keyboardType="numeric"
           />
 
           <FormField
-            label="โรงพยาบาล / แพทย์"
+            label="Hospital / Doctor"
             value={formData.hospital}
             onChangeText={(v) => updateField('hospital', v)}
-            placeholder="เช่น โรงพยาบาลเซ็นทรัล"
+            placeholder="e.g. Central Hospital"
           />
 
           <Button
-            title="บันทึก"
+            title="Save"
             onPress={handleSave}
             variant="primary"
             loading={saving}
@@ -375,7 +375,7 @@ export default function ScannerScreen() {
             className="mt-2"
           />
           <Button
-            title="ถ่ายใหม่"
+            title="Retake"
             onPress={handleRetake}
             variant="secondary"
             className="mt-2"

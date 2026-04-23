@@ -26,13 +26,13 @@ import { Card } from '../../src/components/ui/Card'
 type AdminMethod = 'normal' | 'crushed' | 'feeding_tube'
 
 const METHOD_LABELS: Record<AdminMethod, string> = {
-  normal: 'ปกติ',
-  crushed: 'บด',
-  feeding_tube: 'สายยาง',
+  normal: 'Normal',
+  crushed: 'Crushed',
+  feeding_tube: 'Feeding tube',
 }
 
-function formatDateThai(date: Date): string {
-  return date.toLocaleDateString('th-TH', {
+function formatDateEnglish(date: Date): string {
+  return date.toLocaleDateString('en-US', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -75,14 +75,14 @@ function ConfirmBottomSheet({
           <Text className="text-xs font-semibold uppercase tracking-[1px] text-[#8E4B14]">
             Confirm Dose
           </Text>
-          <Text className="text-xl font-bold text-[#2E241B] mt-2">ยืนยันการจ่ายยา</Text>
+          <Text className="text-xl font-bold text-[#2E241B] mt-2">Confirm Medication</Text>
           {item ? (
             <Text className="text-sm text-[#6F6254] mt-2">
               {item.medicine_name}  •  {item.patient_name}
             </Text>
           ) : null}
 
-          <Text className="text-sm font-semibold text-[#5E5145] mt-5 mb-3">วิธีการจ่ายยา</Text>
+          <Text className="text-sm font-semibold text-[#5E5145] mt-5 mb-3">Administration Method</Text>
           <View className="flex-row mb-6">
             {(Object.keys(METHOD_LABELS) as AdminMethod[]).map((method, index) => {
               const isActive = selectedMethod === method
@@ -106,13 +106,13 @@ function ConfirmBottomSheet({
           </View>
 
           <Button
-            title="ยืนยัน"
+            title="Confirm"
             onPress={handleSubmit}
             variant="primary"
             loading={submitting}
             disabled={submitting}
           />
-          <Button title="ยกเลิก" onPress={onClose} variant="ghost" className="mt-2" />
+          <Button title="Cancel" onPress={onClose} variant="ghost" className="mt-2" />
         </Pressable>
       </Pressable>
     </Modal>
@@ -128,12 +128,12 @@ function DuplicateModal({ visible, onClose }: { visible: boolean; onClose: () =>
             Duplicate Guard
           </Text>
           <Text className="text-lg font-bold text-[#2E241B] text-center mt-2">
-            ตรวจพบการจ่ายซ้ำ
+            Duplicate Dose Detected
           </Text>
           <Text className="text-sm text-[#6F6254] text-center mt-2 mb-5">
-            ระบบบล็อกการยืนยันรายการนี้เพื่อป้องกันการให้ยาซ้ำในช่วงเวลาเดียวกัน
+            This confirmation was blocked to prevent giving the same medication twice in this time slot.
           </Text>
-          <Button title="รับทราบ" onPress={onClose} variant="danger" />
+          <Button title="Understood" onPress={onClose} variant="danger" />
         </View>
       </View>
     </Modal>
@@ -161,13 +161,13 @@ function PeriodSection({
             <Text className="text-xl">{group.emoji}</Text>
           </View>
           <View className="flex-1">
-            <Text className="text-base font-bold text-[#2E241B]">{group.label_th}</Text>
-            <Text className="text-xs text-[#7D6E60] mt-1">{group.label_en}</Text>
+            <Text className="text-base font-bold text-[#2E241B]">{group.label_en}</Text>
+            <Text className="text-xs text-[#7D6E60] mt-1">{group.items.length} scheduled items</Text>
           </View>
           {pendingCount > 0 ? (
             <View className="bg-[#FFF0D9] rounded-full px-3 py-1">
               <Text className="text-[11px] font-semibold text-[#A45A11]">
-                {pendingCount} รอ
+                {pendingCount} pending
               </Text>
             </View>
           ) : null}
@@ -278,10 +278,10 @@ export default function ScheduleScreen() {
             Medication Schedule
           </Text>
           <Text className="text-[28px] leading-[34px] font-bold text-[#2E241B] mt-2">
-            ตารางยา
+            Schedule
           </Text>
           <Text className="text-sm text-[#6F6254] mt-2">
-            ยืนยันการให้ยาแบบเรียลไทม์ พร้อมตรวจจับรายการซ้ำก่อนบันทึก
+            Confirm medication in real time with duplicate-dose protection before saving.
           </Text>
         </Card>
       </View>
@@ -298,10 +298,10 @@ export default function ScheduleScreen() {
 
             <View className="flex-1 px-4">
               <Text className="text-center text-base font-bold text-[#2E241B]">
-                {formatDateThai(currentDate)}
+                {formatDateEnglish(currentDate)}
               </Text>
               <Text className="text-center text-xs text-[#7D6E60] mt-1">
-                {scheduleGroups.length} กลุ่มเวลา
+                {scheduleGroups.length} time groups
               </Text>
             </View>
 
@@ -318,7 +318,7 @@ export default function ScheduleScreen() {
       {loadingDate ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#C96B1A" />
-          <Text className="text-sm text-[#7D6E60] mt-3">กำลังโหลดตารางยา...</Text>
+          <Text className="text-sm text-[#7D6E60] mt-3">Loading medication schedule...</Text>
         </View>
       ) : (
         <ScrollView
@@ -330,10 +330,10 @@ export default function ScheduleScreen() {
             <Card className="items-center py-12 bg-[#FFF9F2]">
               <Text className="text-4xl mb-3">📅</Text>
               <Text className="text-base font-bold text-[#2E241B]">
-                ไม่มีตารางยาสำหรับวันนี้
+                No medication schedule for today
               </Text>
               <Text className="text-sm text-[#7D6E60] mt-1">
-                ลองเปลี่ยนวันหรือรีเฟรชข้อมูลอีกครั้ง
+                Try changing the date or refreshing the data.
               </Text>
             </Card>
           ) : (

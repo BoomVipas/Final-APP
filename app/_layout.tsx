@@ -99,7 +99,8 @@ export default function RootLayout() {
           name="scanner"
           options={{
             headerShown: true,
-            title: 'สแกนฉลากยา',
+            title: 'Scan Medication',
+            headerBackTitle: 'Back',
             headerTintColor: '#E8721A',
             headerTitleStyle: { fontWeight: '700' },
           }}

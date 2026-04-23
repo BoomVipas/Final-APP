@@ -179,20 +179,15 @@ export default function PatientsScreen() {
           </View>
         </View>
 
-        <View className="px-5 -mt-9">
-          <View className="rounded-[24px] bg-white border border-[#EDE4D8] px-5 py-3 shadow-sm mb-6">
-            <View className="flex-row items-center">
-              <View className="flex-1 items-center py-1.5">
-                <Text className="text-[24px] leading-[28px] font-semibold text-[#33312F]">{totalPatients}</Text>
-                <Text className="text-[13px] text-[#7D8798] mt-1.5">Patients</Text>
-              </View>
-
-              <View className="w-px h-16 bg-[#E9E1D7]" />
-
-              <View className="flex-1 items-center py-1.5">
-                <Text className="text-[24px] leading-[28px] font-semibold text-[#33312F]">{totalWards}</Text>
-                <Text className="text-[13px] text-[#7D8798] mt-1.5">Ward</Text>
-              </View>
+        <View className="px-5 -mt-3">
+          <View className="flex-row gap-3 mb-6">
+            <View className="flex-1 rounded-[18px] bg-white border border-[#EDE4D8] px-4 py-4 shadow-sm items-center">
+              <Text className="text-[26px] leading-[30px] font-bold text-[#33312F]">{totalPatients}</Text>
+              <Text className="text-[12px] text-[#7D8798] mt-1">Patients</Text>
+            </View>
+            <View className="flex-1 rounded-[18px] bg-white border border-[#EDE4D8] px-4 py-4 shadow-sm items-center">
+              <Text className="text-[26px] leading-[30px] font-bold text-[#33312F]">{totalWards}</Text>
+              <Text className="text-[12px] text-[#7D8798] mt-1">Ward</Text>
             </View>
           </View>
 
