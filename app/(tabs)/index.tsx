@@ -119,8 +119,8 @@ function ActionItem({
       <View className="w-[54px] h-[54px] rounded-[18px] bg-[#FFF5E8] items-center justify-center mb-2">
         <SvgIcon width={iconSize} height={iconSize} />
       </View>
-      {lines.map((line) => (
-        <Text key={line} className="text-[11px] leading-[14px] font-semibold text-[#2E2C2A] text-center">
+      {lines.map((line, i) => (
+        <Text key={i} className="text-[11px] leading-[14px] font-semibold text-[#2E2C2A] text-center">
           {line}
         </Text>
       ))}
@@ -306,7 +306,7 @@ function PatientCard({
 
       <View className="flex-row overflow-hidden">
         {visibleTags.map((tag, index) => (
-          <MedicationTag key={tag} label={tag} accent={index < 2 && patient.statusTone !== 'done'} />
+          <MedicationTag key={`${tag}-${index}`} label={tag} accent={index < 2 && patient.statusTone !== 'done'} />
         ))}
       </View>
 
