@@ -338,11 +338,43 @@ function getDaysLeft(dateValue: string | null): number | null {
 
 function getMedicationLabel(quantity: number, dosageForm: string | null) {
   const normalized = dosageForm?.toLowerCase() ?? ''
-  const unit = normalized.includes('tablet') || normalized.includes('tab') || normalized.includes('เม็ด')
-    ? 'tablet'
-    : 'dose'
-
+  const unit = normalized.includes('tablet') || normalized.includes('tab') ? 'tablet' : 'dose'
   return `${quantity} ${unit}${quantity === 1 ? '' : 's'}`
+}
+
+// Parse JSON schedule notes stored by the scanner into a human-readable label.
+// Falls back to the raw string if it's plain text (not JSON).
+function parseScheduleLabel(notes: string | null): string | null {
+  if (!notes) return null
+  try {
+    const parsed = JSON.parse(notes) as {
+      schedule_type?: string
+      frequency_hours?: number
+      times_per_day?: number
+      meal_relation?: string
+      raw_frequency?: string
+    }
+    const type = parsed.schedule_type
+    if (type === 'interval_hours' && parsed.frequency_hours) {
+      return parsed.frequency_hours === 24
+        ? 'Once per day'
+        : `Every ${parsed.frequency_hours} hours`
+    }
+    if (type === 'times_per_day' && parsed.times_per_day) {
+      const n = parsed.times_per_day
+      return n === 1 ? 'Once per day' : n === 2 ? 'Twice per day' : `${n}× per day`
+    }
+    if (type === 'meal_time' && parsed.meal_relation) {
+      const rel: Record<string, string> = { before: 'Before meals', after: 'After meals', with: 'With meals', any: 'With / without food' }
+      return rel[parsed.meal_relation] ?? 'With meals'
+    }
+    if (type === 'as_needed') return 'As needed (PRN)'
+    // Fall back to raw_frequency text if type not recognized
+    return parsed.raw_frequency ?? null
+  } catch {
+    // Notes is plain text, not JSON — show it directly
+    return notes
+  }
 }
 
 function buildMedicineName(name: string, strength: string | null) {
@@ -485,13 +517,23 @@ function MedicationCard({ medication }: { medication: DisplayMedication }) {
             {medication.medicineName}
           </Text>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-            <Ionicons name="medkit-outline" size={14} color="#7E8797" />
-            <Text style={{ marginLeft: 6, fontSize: 13, lineHeight: 18, color: '#727C8F' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+            <Ionicons name="medkit-outline" size={13} color="#7E8797" />
+            <Text style={{ marginLeft: 5, fontSize: 13, lineHeight: 18, color: '#727C8F' }}>
               {getMedicationLabel(medication.doseQuantity, medication.dosageForm)}
-              {medication.instructions ? ` • ${medication.instructions}` : ''}
             </Text>
           </View>
+          {(() => {
+            const scheduleLabel = parseScheduleLabel(medication.instructions)
+            return scheduleLabel ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+                <Ionicons name="time-outline" size={13} color="#7E8797" />
+                <Text style={{ marginLeft: 5, fontSize: 13, lineHeight: 18, color: '#727C8F' }}>
+                  {scheduleLabel}
+                </Text>
+              </View>
+            ) : null
+          })()}
         </View>
 
         <TouchableOpacity
