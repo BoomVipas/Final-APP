@@ -6,7 +6,7 @@
 import type { UsersRow } from '../types/database'
 
 // Temporary: keep the product accessible without a login wall during build-out.
-export const AUTH_BYPASS_ENABLED = true
+export const AUTH_BYPASS_ENABLED = false
 
 export const DEV_BYPASS_USER: UsersRow = {
   id: '00000000-0000-0000-0000-00000000d001',

@@ -27,12 +27,15 @@ export const usePatientStore = create<PatientState>((set, get) => ({
   fetchPatients: async (wardId: string) => {
     set({ loading: true, error: null })
     try {
-      const { data, error } = await supabase
+      const base = supabase
         .from('patients')
         .select('id, name, photo_url, room_number, ward_id, status, date_of_birth, notes, created_at, updated_at')
-        .eq('ward_id', wardId)
         .eq('status', 'active')
         .order('name', { ascending: true })
+
+      const { data, error } = wardId
+        ? await base.eq('ward_id', wardId)
+        : await base
 
       if (error) throw error
       set({ patients: data ?? [], loading: false })

@@ -64,7 +64,7 @@ export const useMedicationStore = create<MedicationState>((set, get) => ({
     set({ loading: true, error: null })
     try {
       // 1. Get all active prescriptions for patients in this ward
-      const { data: prescriptions, error: pErr } = await supabase
+      const prescriptionBase = supabase
         .from('patient_prescriptions')
         .select(`
           id,
@@ -88,9 +88,12 @@ export const useMedicationStore = create<MedicationState>((set, get) => ({
           )
         `)
         .eq('is_active', true)
-        .eq('patients.ward_id', wardId)
         .eq('patients.status', 'active')
         .lte('start_date', date)
+
+      const { data: prescriptions, error: pErr } = wardId
+        ? await prescriptionBase.eq('patients.ward_id', wardId)
+        : await prescriptionBase
 
       if (pErr) throw pErr
 
