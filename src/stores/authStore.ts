@@ -28,33 +28,26 @@ async function fetchUser(userId: string): Promise<UsersRow | null> {
 }
 
 async function ensureBypassUser(): Promise<UsersRow> {
-  const { data: existing } = await supabase
+  // 1. Try to use the first real user in the users table who has a ward assigned.
+  //    This gives us a real ward UUID so all ward-filtered queries work correctly.
+  const { data: anyUser } = await supabase
     .from('users')
     .select('id, email, name, phone, role, ward_id, created_at')
-    .eq('id', DEV_BYPASS_USER.id)
+    .not('ward_id', 'is', null)
+    .limit(1)
     .maybeSingle()
 
-  if (existing) return existing as UsersRow
+  if (anyUser) return anyUser as UsersRow
 
-  const { data, error } = await supabase
-    .from('users')
-    .insert({
-      id: DEV_BYPASS_USER.id,
-      email: DEV_BYPASS_USER.email,
-      name: DEV_BYPASS_USER.name,
-      phone: DEV_BYPASS_USER.phone,
-      role: DEV_BYPASS_USER.role,
-      ward_id: DEV_BYPASS_USER.ward_id,
-    })
-    .select('id, email, name, phone, role, ward_id, created_at')
-    .single()
+  // 2. No user row readable — get the first ward UUID from the wards table.
+  const { data: ward } = await supabase
+    .from('wards')
+    .select('id')
+    .limit(1)
+    .maybeSingle()
 
-  if (error) {
-    // If the insert fails, keep a local fallback so the app remains usable.
-    return DEV_BYPASS_USER
-  }
-
-  return (data as UsersRow) ?? DEV_BYPASS_USER
+  // Return the local bypass identity with a real ward UUID (or null if DB is empty).
+  return { ...DEV_BYPASS_USER, ward_id: ward?.id ?? null }
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
