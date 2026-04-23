@@ -4,9 +4,10 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { Alert, Image, ImageBackground, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { Tabs, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import DoubleCheckIcon from '../../icons/DoubleCheckIcon'
 import ScanMedicationIcon from '../../icons/ScanMedicationIcon'
@@ -18,6 +19,10 @@ import { useMedicationStore } from '../../src/stores/medicationStore'
 import { useNotificationStore } from '../../src/stores/notificationStore'
 import { Card } from '../../src/components/ui/Card'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
+import HomeIcon from '../../icons/Home.png'
+import WardIcon from '../../icons/Ward.png'
+import ProfileIcon from '../../icons/Profile.png'
+import BackgroundImg from '../../icons/Background.png'
 
 interface AlertCardData {
   id: string
@@ -103,12 +108,10 @@ function formatWardLabel(wardId: string | null | undefined): string {
 
 function ActionItem({
   SvgIcon,
-  iconSize = 34,
   label,
   onPress,
 }: {
   SvgIcon: React.FC<{ width?: number; height?: number }>
-  iconSize?: number
   label: string
   onPress: () => void
 }) {
@@ -116,8 +119,8 @@ function ActionItem({
 
   return (
     <TouchableOpacity onPress={onPress} className="flex-1 items-center px-1">
-      <View className="w-[54px] h-[54px] rounded-[18px] bg-[#FFF5E8] items-center justify-center mb-2">
-        <SvgIcon width={iconSize} height={iconSize} />
+      <View className="w-[54px] h-[54px] rounded-[18px] bg-[#FFF5E8] overflow-hidden mb-2">
+        <SvgIcon width={54} height={54} />
       </View>
       {lines.map((line, i) => (
         <Text key={i} className="text-[11px] leading-[14px] font-semibold text-[#2E2C2A] text-center">
@@ -133,14 +136,49 @@ function StatCard({
   value,
   icon,
   tintClass,
+  gradient,
   onPress,
 }: {
   label: string
   value: number
   icon: React.ComponentProps<typeof Ionicons>['name']
   tintClass?: string
+  gradient?: boolean | string[]
   onPress: () => void
 }) {
+  const inner = (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.88}
+      style={{ flex: 1, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 16 }}
+    >
+      <View className="flex-row items-start justify-between">
+        <Text className="text-[13px] leading-[18px] text-[#3B3836] flex-1 pr-2">{label}</Text>
+        <View className="w-9 h-9 rounded-full bg-[#F5F5F5] items-center justify-center">
+          <Ionicons name={icon} size={18} color="#303030" />
+        </View>
+      </View>
+      <View className="flex-row items-end justify-between mt-3">
+        <Text className="text-[26px] font-bold text-[#303030]">{value}</Text>
+        <Ionicons name="chevron-forward" size={18} color="#454545" />
+      </View>
+    </TouchableOpacity>
+  )
+
+  if (gradient) {
+    const gradientColors = Array.isArray(gradient) ? gradient : ['#F1F1F1', '#FFFFFF']
+    return (
+      <LinearGradient
+        colors={gradientColors as [string, string]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={{ flex: 1, borderRadius: 18 }}
+      >
+        {inner}
+      </LinearGradient>
+    )
+  }
+
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -314,6 +352,28 @@ function PatientCard({
         <Text className="text-[13px] text-[#6B6560] mt-3">+{hiddenTagCount} more items</Text>
       ) : null}
     </TouchableOpacity>
+  )
+}
+
+function BottomNav({ onHome, onWard, onProfile }: { onHome: () => void; onWard: () => void; onProfile: () => void }) {
+  return (
+    <View style={{ backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#ECE5DB', paddingHorizontal: 32, paddingTop: 12, paddingBottom: 20 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <TouchableOpacity onPress={onHome} style={{ alignItems: 'center', minWidth: 76 }}>
+          <Image source={HomeIcon} style={{ width: 30, height: 30, tintColor: '#F2A14C' }} />
+          <Text style={{ fontSize: 11, fontWeight: '600', color: '#2F2F2F', marginTop: 6 }}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onWard} style={{ alignItems: 'center', minWidth: 76 }}>
+          <Image source={WardIcon} style={{ width: 30, height: 30, tintColor: '#2F2F2F' }} />
+          <Text style={{ fontSize: 11, color: '#2F2F2F', marginTop: 6 }}>Ward</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onProfile} style={{ alignItems: 'center', minWidth: 76 }}>
+          <Image source={ProfileIcon} style={{ width: 30, height: 30, tintColor: '#2F2F2F' }} />
+          <Text style={{ fontSize: 11, color: '#2F2F2F', marginTop: 6 }}>Profile</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={{ height: 6, width: 128, borderRadius: 999, backgroundColor: '#000000', alignSelf: 'center', marginTop: 16 }} />
+    </View>
   )
 }
 
@@ -511,16 +571,16 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#FFF9F1]" edges={['left', 'right']}>
+    <View style={{ flex: 1, backgroundColor: '#FFF9F1' }}>
+      <Tabs.Screen options={{ tabBarStyle: { display: 'none' } }} />
+      <SafeAreaView className="flex-1" edges={['left', 'right']}>
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 6 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F2A24B" />}
       >
-        <View className="bg-[#FFB464] px-6 pt-12 pb-8">
-          <View className="absolute right-[-35] top-2 w-36 h-36 rounded-full bg-[#FFD2A6] opacity-50" />
-          <View className="absolute right-3 top-8 w-20 h-20 rounded-full bg-[#FFE5CA] opacity-80" />
+        <ImageBackground source={BackgroundImg} className="px-6 pt-12 pb-8" resizeMode="cover" imageStyle={{ width: '100%', height: '100%' }}>
 
           <View className="flex-row items-start justify-between pt-1">
             <View className="flex-1 pr-4">
@@ -549,8 +609,8 @@ export default function HomeScreen() {
           </View>
 
           <View className="flex-row mt-5 gap-3">
-            <StatCard label="Total Recipients" value={totalRecipients} icon="medkit-outline" onPress={() => router.push('/patients')} />
-            <StatCard label="Distributed Today" value={distributedToday} icon="hourglass-outline" tintClass="bg-[#F3FFF5]" onPress={() => router.push('/schedule')} />
+            <StatCard label="Total Recipients" value={totalRecipients} icon="medkit-outline" gradient onPress={() => router.push('/patients')} />
+            <StatCard label="Distributed Today" value={distributedToday} icon="hourglass-outline" gradient={['#E4FFF8', '#FFFFFF']} onPress={() => router.push('/schedule')} />
           </View>
 
           <TouchableOpacity onPress={() => router.push('/schedule')} className="mt-3 rounded-[14px] bg-[#FFF4F3] px-4 py-3 flex-row items-center justify-between">
@@ -565,14 +625,14 @@ export default function HomeScreen() {
             </View>
             <Ionicons name="chevron-forward" size={18} color="#3E3A37" />
           </TouchableOpacity>
-        </View>
+        </ImageBackground>
 
         <View className="px-6 pt-6">
           <View className="flex-row justify-between mb-6">
-            <ActionItem SvgIcon={DoubleCheckIcon} iconSize={38} label={'Double\nCheck'} onPress={() => router.push('/schedule')} />
-            <ActionItem SvgIcon={ScanMedicationIcon} iconSize={36} label={'Scan\nMedication'} onPress={() => router.push('/scanner')} />
-            <ActionItem SvgIcon={LowStockIcon} iconSize={34} label={'Low Stock'} onPress={() => openNotifications('stock')} />
-            <ActionItem SvgIcon={OrderIcon} iconSize={30} label={'Order'} onPress={() => router.push('/report')} />
+            <ActionItem SvgIcon={DoubleCheckIcon} label={'Double\nCheck'} onPress={() => router.push('/schedule')} />
+            <ActionItem SvgIcon={ScanMedicationIcon} label={'Scan\nMedication'} onPress={() => router.push('/scanner')} />
+            <ActionItem SvgIcon={LowStockIcon} label={'Low Stock'} onPress={() => openNotifications('stock')} />
+            <ActionItem SvgIcon={OrderIcon} label={'Order'} onPress={() => router.push('/report')} />
           </View>
 
           <Card className="bg-[#FFFDF9] shadow-sm mb-6">
@@ -641,5 +701,11 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+    <BottomNav
+      onHome={() => router.replace('/(tabs)')}
+      onWard={() => router.replace('/(tabs)/patients')}
+      onProfile={() => router.replace('/(tabs)/settings')}
+    />
+    </View>
   )
 }
