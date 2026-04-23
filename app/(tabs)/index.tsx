@@ -4,15 +4,20 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import DoubleCheckIcon from '../../icons/DoubleCheckIcon'
+import ScanMedicationIcon from '../../icons/ScanMedicationIcon'
+import LowStockIcon from '../../icons/LowStockIcon'
+import OrderIcon from '../../icons/OrderIcon'
 import { useAuthStore } from '../../src/stores/authStore'
 import { usePatientStore } from '../../src/stores/patientStore'
 import { useMedicationStore } from '../../src/stores/medicationStore'
 import { useNotificationStore } from '../../src/stores/notificationStore'
 import { Card } from '../../src/components/ui/Card'
+import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
 
 interface AlertCardData {
   id: string
@@ -78,12 +83,32 @@ function getFirstName(name: string | null | undefined): string {
   return name.trim().split(/\s+/)[0]
 }
 
+function formatWardLabel(wardId: string | null | undefined): string {
+  if (!wardId) return 'Ward'
+  const normalized = wardId.trim().toLowerCase()
+  if (normalized === 'ward-a' || normalized === 'a') return 'Ward A'
+  if (normalized === 'ward-b' || normalized === 'b') return 'Ward B'
+
+  const digitMatch = normalized.match(/(\d+)/)
+  if (digitMatch) {
+    const index = Number(digitMatch[1])
+    if (index >= 1 && index <= 26) {
+      return `Ward ${String.fromCharCode(64 + index)}`
+    }
+  }
+
+  if (normalized.startsWith('ward')) return wardId.replace(/-/g, ' ')
+  return `Ward ${wardId}`
+}
+
 function ActionItem({
-  icon,
+  SvgIcon,
+  iconSize = 34,
   label,
   onPress,
 }: {
-  icon: React.ComponentProps<typeof Ionicons>['name']
+  SvgIcon: React.FC<{ width?: number; height?: number }>
+  iconSize?: number
   label: string
   onPress: () => void
 }) {
@@ -91,11 +116,11 @@ function ActionItem({
 
   return (
     <TouchableOpacity onPress={onPress} className="flex-1 items-center px-1">
-      <View className="w-16 h-16 rounded-[22px] bg-[#FFF5E8] items-center justify-center mb-3">
-        <Ionicons name={icon} size={30} color="#F2A24B" />
+      <View className="w-[54px] h-[54px] rounded-[18px] bg-[#FFF5E8] items-center justify-center mb-2">
+        <SvgIcon width={iconSize} height={iconSize} />
       </View>
       {lines.map((line) => (
-        <Text key={line} className="text-[12px] leading-[15px] font-semibold text-[#2E2C2A] text-center">
+        <Text key={line} className="text-[11px] leading-[14px] font-semibold text-[#2E2C2A] text-center">
           {line}
         </Text>
       ))}
@@ -108,66 +133,84 @@ function StatCard({
   value,
   icon,
   tintClass,
+  onPress,
 }: {
   label: string
   value: number
   icon: React.ComponentProps<typeof Ionicons>['name']
   tintClass?: string
+  onPress: () => void
 }) {
   return (
-    <View className={`flex-1 rounded-[22px] bg-white px-5 py-5 ${tintClass ?? ''}`}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.88}
+      className={`flex-1 rounded-[18px] bg-white px-4 py-4 ${tintClass ?? ''}`}
+    >
       <View className="flex-row items-start justify-between">
-        <Text className="text-[15px] leading-[20px] text-[#3B3836] flex-1 pr-3">{label}</Text>
-        <View className="w-12 h-12 rounded-full bg-[#FBFBFB] items-center justify-center shadow-sm">
-          <Ionicons name={icon} size={22} color="#303030" />
+        <Text className="text-[13px] leading-[18px] text-[#3B3836] flex-1 pr-2">{label}</Text>
+        <View className="w-9 h-9 rounded-full bg-[#F5F5F5] items-center justify-center">
+          <Ionicons name={icon} size={18} color="#303030" />
         </View>
       </View>
-      <View className="flex-row items-end justify-between mt-7">
-        <Text className="text-[28px] font-bold text-[#303030]">{value}</Text>
-        <Ionicons name="chevron-forward" size={20} color="#454545" />
+      <View className="flex-row items-end justify-between mt-3">
+        <Text className="text-[26px] font-bold text-[#303030]">{value}</Text>
+        <Ionicons name="chevron-forward" size={18} color="#454545" />
       </View>
-    </View>
+    </TouchableOpacity>
   )
 }
 
-function AlertCard({ alert }: { alert: AlertCardData }) {
+function AlertCard({
+  alert,
+  onPress,
+  onMorePress,
+}: {
+  alert: AlertCardData
+  onPress: () => void
+  onMorePress: () => void
+}) {
   return (
-    <View className="bg-white border border-[#EFE4D5] rounded-[18px] px-4 py-4 mb-4 shadow-sm">
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.9}
+      className="bg-white border border-[#EFE4D5] rounded-[18px] px-4 py-4 mb-4 shadow-sm"
+    >
       <View className="flex-row items-start">
-        <View className="w-14 h-14 rounded-[14px] bg-[#FFF4E6] items-center justify-center mr-4">
-          <Text className="text-[26px]">💊</Text>
+        <View className="w-12 h-12 rounded-[12px] bg-[#FFF4E6] items-center justify-center mr-3">
+          <Text className="text-[22px]">💊</Text>
         </View>
 
-        <View className="flex-1 pr-3">
-          <Text className="text-[15px] font-bold text-[#343230]">{alert.patientName}</Text>
-          <Text className="text-[14px] text-[#4B4744] mt-0.5">{alert.title}</Text>
-
-          <View className="flex-row items-center mt-2">
-            <Ionicons name="medkit-outline" size={14} color="#86808A" />
-            <Text className="text-[13px] text-[#7D7780] ml-2">{alert.medication}</Text>
-          </View>
+        <View className="flex-1 pr-2">
+          <Text className="text-[14px] font-bold text-[#343230]">{alert.patientName}</Text>
+          <Text className="text-[13px] text-[#4B4744] mt-0.5">{alert.title}</Text>
 
           <View className="flex-row items-center mt-1.5">
-            <Ionicons name="time-outline" size={14} color="#86808A" />
-            <Text className="text-[13px] text-[#7D7780] ml-2">{alert.detail}</Text>
+            <Ionicons name="medkit-outline" size={13} color="#86808A" />
+            <Text className="text-[12px] text-[#7D7780] ml-1.5">{alert.medication}</Text>
           </View>
 
-          <View className={`self-start mt-4 rounded-full px-4 py-1.5 ${
+          <View className="flex-row items-center mt-1">
+            <Ionicons name="time-outline" size={13} color="#86808A" />
+            <Text className="text-[12px] text-[#7D7780] ml-1.5">{alert.detail}</Text>
+          </View>
+
+          <View className={`self-start mt-3 rounded-full px-3 py-1 ${
             alert.ctaTone === 'danger' ? 'bg-[#FFF1F1]' : 'bg-[#FFF3EA]'
           }`}>
-            <Text className={`text-[12px] ${
+            <Text className={`text-[11px] ${
               alert.ctaTone === 'danger' ? 'text-[#FF6A63]' : 'text-[#F39A47]'
             }`}>
-              {alert.cta}
+              🔔 {alert.cta}
             </Text>
           </View>
         </View>
 
-        <TouchableOpacity className="min-h-[32px] min-w-[24px] items-center justify-center">
-          <Ionicons name="ellipsis-vertical" size={18} color="#4A4744" />
+        <TouchableOpacity onPress={onMorePress} className="min-h-[28px] min-w-[20px] items-center justify-center">
+          <Ionicons name="ellipsis-vertical" size={16} color="#4A4744" />
         </TouchableOpacity>
       </View>
-    </View>
+    </TouchableOpacity>
   )
 }
 
@@ -192,46 +235,64 @@ function StatusChip({
   )
 }
 
+function cleanMedicationLabel(label: string) {
+  return label.replace(/^•\s*/, '').trim()
+}
+
 function MedicationTag({ label, accent }: { label: string; accent?: boolean }) {
   return (
-    <View className={`rounded-[10px] border px-3 py-2 mr-2 mb-2 ${
+    <View
+      className={`rounded-[10px] border px-2 py-1.5 mr-1.5 ${
       accent ? 'border-[#FF8E84] bg-[#FFF9F9]' : 'border-[#ECE7DF] bg-white'
-    }`}>
-      <Text className={`text-[12px] ${accent ? 'text-[#FF6A63]' : 'text-[#454240]'}`}>{label}</Text>
+    }`}
+      style={{ maxWidth: 126, flexShrink: 1 }}
+    >
+      <Text
+        numberOfLines={1}
+        className={`text-[10px] leading-[14px] ${accent ? 'text-[#FF6A63]' : 'text-[#454240]'}`}
+      >
+        • {cleanMedicationLabel(label)}
+      </Text>
     </View>
   )
 }
 
-function PatientCard({ patient }: { patient: DispensePatientCard }) {
-  const statusDotClass =
-    patient.statusTone === 'urgent'
-      ? 'bg-[#FF6A63]'
-      : patient.statusTone === 'pending'
-        ? 'bg-[#F0B356]'
-        : 'bg-[#24B57A]'
+function PatientCard({
+  patient,
+  onPress,
+  onMorePress,
+}: {
+  patient: DispensePatientCard
+  onPress: () => void
+  onMorePress: () => void
+}) {
+  const visibleTags = patient.tags.slice(0, 3)
+  const hiddenTagCount = Math.max(patient.tags.length - visibleTags.length, 0) + (patient.moreCount ?? 0)
 
   return (
-    <View className="bg-white border border-[#EEE3D6] rounded-[22px] px-4 py-4 mb-4 shadow-sm">
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.9}
+      className="bg-white border border-[#EEE3D6] rounded-[22px] px-4 py-4 mb-4 shadow-sm"
+    >
       <View className="flex-row items-start">
-        <View className="w-14 h-14 rounded-full bg-[#F4A851] items-center justify-center mr-4 overflow-hidden">
-          <Text className="text-[26px]">👩🏻</Text>
-        </View>
+        <PatientAvatar name={patient.name} size={48} className="mr-3" />
 
-        <View className="flex-1 pr-3">
+        <View className="flex-1 pr-2">
           <View className="flex-row items-start justify-between">
-            <Text className="text-[16px] font-bold text-[#343230] flex-1 pr-2">{patient.name}</Text>
-            <TouchableOpacity className="min-h-[28px] min-w-[24px] items-center justify-center">
-              <Ionicons name="ellipsis-vertical" size={18} color="#4A4744" />
+            <Text className="text-[14px] font-bold text-[#343230] flex-1 pr-2">{patient.name}</Text>
+            <TouchableOpacity onPress={onMorePress} className="min-h-[28px] min-w-[20px] items-center justify-center">
+              <Ionicons name="ellipsis-vertical" size={16} color="#4A4744" />
             </TouchableOpacity>
           </View>
 
-          <Text className="text-[13px] text-[#7B7580] mt-1">
+          <Text className="text-[12px] text-[#7B7580] mt-0.5">
             {patient.room} • Age {patient.age} • {patient.ward}
           </Text>
 
-          <View className="flex-row items-center mt-2">
-            <Ionicons name="medkit-outline" size={14} color="#7B7580" />
-            <Text className="text-[13px] text-[#7B7580] ml-2 mr-2">{patient.tablets}</Text>
+          <View className="flex-row items-center mt-1.5">
+            <Ionicons name="medkit-outline" size={13} color="#7B7580" />
+            <Text className="text-[12px] text-[#7B7580] ml-1.5 mr-2">{patient.tablets}</Text>
             <StatusChip label={patient.statusLabel} tone={patient.statusTone} />
           </View>
         </View>
@@ -243,16 +304,16 @@ function PatientCard({ patient }: { patient: DispensePatientCard }) {
         <Text className="text-[13px] text-[#FF6A63] mb-3">{patient.note}</Text>
       ) : null}
 
-      <View className="flex-row flex-wrap">
-        {patient.tags.map((tag, index) => (
+      <View className="flex-row overflow-hidden">
+        {visibleTags.map((tag, index) => (
           <MedicationTag key={tag} label={tag} accent={index < 2 && patient.statusTone !== 'done'} />
         ))}
       </View>
 
-      {patient.moreCount ? (
-        <Text className="text-[13px] text-[#6B6560] mt-1">+{patient.moreCount} more items</Text>
+      {hiddenTagCount ? (
+        <Text className="text-[13px] text-[#6B6560] mt-3">+{hiddenTagCount} more items</Text>
       ) : null}
-    </View>
+    </TouchableOpacity>
   )
 }
 
@@ -263,6 +324,8 @@ export default function HomeScreen() {
   const { scheduleGroups, pendingCount, completedCount, fetchSchedule } = useMedicationStore()
   const { activeAlerts, fetchNotifications } = useNotificationStore()
   const [refreshing, setRefreshing] = useState(false)
+  const [alertsExpanded, setAlertsExpanded] = useState(true)
+  const [selectedWardFilter, setSelectedWardFilter] = useState<'all' | 'ward-a' | 'ward-b'>('all')
 
   const today = new Date()
   const todayStr = today.toISOString().slice(0, 10)
@@ -319,7 +382,7 @@ export default function HomeScreen() {
           name: patient.name,
           room: patient.room_number ? `Room ${patient.room_number}` : 'No room',
           age: getAge(patient.date_of_birth),
-          ward: wardId ? `Ward ${wardId}` : 'Ward',
+          ward: formatWardLabel(wardId),
           tablets: `${Math.max(patientItems.length, 1) * 4} tablets`,
           statusLabel: statusTone === 'urgent' ? 'Urgent' : statusTone === 'pending' ? 'Pending' : 'Dispensed',
           statusTone,
@@ -361,7 +424,7 @@ export default function HomeScreen() {
 
   const demoPatientCards: DispensePatientCard[] = [
     {
-      id: 'demo-patient-1',
+      id: 'p1',
       name: 'Mr. Somchai Wongsri',
       room: 'Room A-102',
       age: '78',
@@ -373,7 +436,7 @@ export default function HomeScreen() {
       moreCount: 3,
     },
     {
-      id: 'demo-patient-2',
+      id: 'p2',
       name: 'Mrs. Polo Suksan',
       room: 'Room B-201',
       age: '81',
@@ -386,7 +449,7 @@ export default function HomeScreen() {
       moreCount: 4,
     },
     {
-      id: 'demo-patient-3',
+      id: 'p3',
       name: 'Mr. Mana Jai',
       room: 'Room B-203',
       age: '69',
@@ -400,129 +463,179 @@ export default function HomeScreen() {
 
   const alertCards = visualFallback ? demoAlertCards : liveAlertCards
   const patientCards = visualFallback ? demoPatientCards : livePatientCards
+  const filteredPatientCards = patientCards.filter((patient) => {
+    if (selectedWardFilter === 'all') return true
+    if (selectedWardFilter === 'ward-a') return patient.ward.toLowerCase().includes('ward a')
+    return patient.ward.toLowerCase().includes('ward b')
+  })
+  const visibleAlertCards = alertsExpanded ? alertCards : []
   const totalRecipients = visualFallback ? 154 : patients.length
   const distributedToday = visualFallback ? 34 : completedCount
   const needsAttention = visualFallback ? 154 : pendingCount
   const firstName = visualFallback ? 'Peeraya' : getFirstName(user?.name)
   const unreadCount = visualFallback ? 1 : Math.max(activeAlerts.length, 0)
 
+  const openNotifications = (filter?: 'all' | 'stock') => {
+    router.push({
+      pathname: '/notifications',
+      params: filter && filter !== 'all' ? { filter } : undefined,
+    })
+  }
+
+  const openPatientDetail = (patientId: string) => {
+    router.push(`/patient/${patientId}`)
+  }
+
+  const showPatientActions = (patient: DispensePatientCard) => {
+    Alert.alert(
+      patient.name,
+      'Choose the next workflow for this patient.',
+      [
+        { text: 'View Profile', onPress: () => openPatientDetail(patient.id) },
+        { text: 'Open Ward', onPress: () => router.push('/patients') },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    )
+  }
+
+  const showAlertActions = (alert: AlertCardData) => {
+    Alert.alert(
+      alert.patientName,
+      alert.title,
+      [
+        { text: 'Open Alerts', onPress: () => openNotifications('all') },
+        { text: 'Open Ward', onPress: () => router.push('/patients') },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    )
+  }
+
   return (
-    <SafeAreaView className="flex-1 bg-[#FFF9F1]">
+    <SafeAreaView className="flex-1 bg-[#FFF9F1]" edges={['left', 'right']}>
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 26 }}
+        contentContainerStyle={{ paddingBottom: 6 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F2A24B" />}
       >
-        <View className="bg-[#FFB464] px-6 pt-5 pb-8">
+        <View className="bg-[#FFB464] px-6 pt-12 pb-8">
           <View className="absolute right-[-35] top-2 w-36 h-36 rounded-full bg-[#FFD2A6] opacity-50" />
           <View className="absolute right-3 top-8 w-20 h-20 rounded-full bg-[#FFE5CA] opacity-80" />
 
-          <View className="flex-row items-start justify-between pt-2">
+          <View className="flex-row items-start justify-between pt-1">
             <View className="flex-1 pr-4">
-              <Text className="text-[16px] text-[#38332E]">{getGreeting(today)}</Text>
-              <View className="flex-row items-center mt-1.5">
-                <Text className="text-[30px] leading-[36px] font-bold text-[#2E2C2A]">{firstName}</Text>
-                <Ionicons name="chevron-down" size={20} color="#2E2C2A" style={{ marginLeft: 4 }} />
+              <Text className="text-[13px] text-[#38332E]">{getGreeting(today)}</Text>
+              <View className="flex-row items-center mt-1">
+                <Text className="text-[24px] leading-[30px] font-bold text-[#2E2C2A]">{firstName}</Text>
+                <Ionicons name="chevron-down" size={16} color="#2E2C2A" style={{ marginLeft: 3 }} />
               </View>
 
-              <View className="flex-row items-center mt-4">
-                <Ionicons name="calendar-outline" size={18} color="#2E2C2A" />
-                <Text className="text-[14px] text-[#2E2C2A] ml-2">
+              <View className="flex-row items-center mt-2">
+                <Ionicons name="calendar-outline" size={14} color="#2E2C2A" />
+                <Text className="text-[12px] text-[#2E2C2A] ml-1.5">
                   {formatHeaderDate(today)} • {getDoseLabel(today)}
                 </Text>
               </View>
             </View>
 
-            <TouchableOpacity className="w-14 h-14 rounded-full bg-white items-center justify-center mt-2">
-              <Ionicons name="notifications-outline" size={22} color="#2E2C2A" />
+            <TouchableOpacity onPress={() => openNotifications('all')} className="w-11 h-11 rounded-full bg-white items-center justify-center mt-1">
+              <Ionicons name="notifications-outline" size={20} color="#2E2C2A" />
               {unreadCount > 0 ? (
-                <View className="absolute top-3 right-3 min-w-[16px] h-4 rounded-full bg-[#FF4E4E] items-center justify-center px-1">
-                  <Text className="text-[10px] font-bold text-white">{unreadCount}</Text>
+                <View className="absolute top-2 right-2 min-w-[14px] h-[14px] rounded-full bg-[#FF4E4E] items-center justify-center px-0.5">
+                  <Text className="text-[9px] font-bold text-white">{unreadCount}</Text>
                 </View>
               ) : null}
             </TouchableOpacity>
           </View>
 
-          <View className="flex-row mt-7">
-            <StatCard label="Total\nRecipients" value={totalRecipients} icon="medkit-outline" />
-            <View className="w-3" />
-            <StatCard label="Distributed\nToday" value={distributedToday} icon="hourglass-outline" tintClass="bg-[#F3FFF5]" />
+          <View className="flex-row mt-5 gap-3">
+            <StatCard label="Total Recipients" value={totalRecipients} icon="medkit-outline" onPress={() => router.push('/patients')} />
+            <StatCard label="Distributed Today" value={distributedToday} icon="hourglass-outline" tintClass="bg-[#F3FFF5]" onPress={() => router.push('/schedule')} />
           </View>
 
-          <TouchableOpacity className="mt-4 rounded-[18px] bg-[#FFF4F3] px-5 py-4 flex-row items-center justify-between">
+          <TouchableOpacity onPress={() => router.push('/schedule')} className="mt-3 rounded-[14px] bg-[#FFF4F3] px-4 py-3 flex-row items-center justify-between">
             <View className="flex-row items-center flex-1">
-              <View className="w-12 h-12 rounded-full bg-white items-center justify-center mr-4">
-                <Ionicons name="alarm-outline" size={22} color="#FF7A73" />
+              <View className="w-9 h-9 rounded-full bg-white items-center justify-center mr-3">
+                <Ionicons name="alarm-outline" size={18} color="#FF7A73" />
               </View>
               <View>
-                <Text className="text-[15px] text-[#343230]">Needs Attention</Text>
-                <Text className="text-[18px] font-bold text-[#FF6464] mt-0.5">{needsAttention}</Text>
+                <Text className="text-[13px] text-[#343230]">Needs Attention</Text>
+                <Text className="text-[16px] font-bold text-[#FF6464]">{needsAttention}</Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#3E3A37" />
+            <Ionicons name="chevron-forward" size={18} color="#3E3A37" />
           </TouchableOpacity>
         </View>
 
-        <View className="px-6 pt-8">
-          <View className="flex-row justify-between mb-8">
-            <ActionItem icon="shield-checkmark-outline" label={'Double\nCheck'} onPress={() => router.push('/schedule')} />
-            <ActionItem icon="scan-outline" label={'Scan\nMedication'} onPress={() => router.push('/scanner')} />
-            <ActionItem icon="cube-outline" label={'Low Stock'} onPress={() => router.push('/patients')} />
-            <ActionItem icon="document-text-outline" label={'Order'} onPress={() => router.push('/patients')} />
+        <View className="px-6 pt-6">
+          <View className="flex-row justify-between mb-6">
+            <ActionItem SvgIcon={DoubleCheckIcon} iconSize={38} label={'Double\nCheck'} onPress={() => router.push('/schedule')} />
+            <ActionItem SvgIcon={ScanMedicationIcon} iconSize={36} label={'Scan\nMedication'} onPress={() => router.push('/scanner')} />
+            <ActionItem SvgIcon={LowStockIcon} iconSize={34} label={'Low Stock'} onPress={() => openNotifications('stock')} />
+            <ActionItem SvgIcon={OrderIcon} iconSize={30} label={'Order'} onPress={() => router.push('/report')} />
           </View>
 
-          <Card className="bg-[#FFFDF9] shadow-sm mb-10">
-            <View className="flex-row items-center justify-between mb-5">
+          <Card className="bg-[#FFFDF9] shadow-sm mb-6">
+            <View className="flex-row items-center justify-between mb-4">
               <View className="flex-row items-center">
-                <Text className="text-[24px] mr-3">⚠️</Text>
-                <Text className="text-[18px] font-semibold text-[#262321]">Urgent Alerts</Text>
+                <Text className="text-[20px] mr-2">⚠️</Text>
+                <Text className="text-[16px] font-semibold text-[#262321]">Urgent Alerts</Text>
               </View>
-              <TouchableOpacity className="w-10 h-10 rounded-full bg-white border border-[#EFE6DB] items-center justify-center">
-                <Ionicons name="chevron-up" size={18} color="#484440" />
+              <TouchableOpacity onPress={() => setAlertsExpanded((current) => !current)} className="w-8 h-8 rounded-full bg-white border border-[#EFE6DB] items-center justify-center">
+                <Ionicons name={alertsExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#484440" />
               </TouchableOpacity>
             </View>
 
-            {alertCards.map((alert) => (
-              <AlertCard key={alert.id} alert={alert} />
+            {visibleAlertCards.map((alert) => (
+              <AlertCard
+                key={alert.id}
+                alert={alert}
+                onPress={() => openNotifications('all')}
+                onMorePress={() => showAlertActions(alert)}
+              />
             ))}
 
-            <TouchableOpacity className="rounded-[16px] border border-[#E5DDD3] bg-white py-4 items-center">
-              <Text className="text-[16px] font-semibold text-[#343230]">View All</Text>
+            <TouchableOpacity onPress={() => openNotifications('all')} className="rounded-[12px] border border-[#E5DDD3] bg-white py-3 items-center">
+              <Text className="text-[14px] font-semibold text-[#343230]">View All</Text>
             </TouchableOpacity>
           </Card>
         </View>
 
-        <View className="bg-white pt-8 pb-4">
+        <View className="bg-white pt-6 pb-4">
           <View className="px-6">
-            <View className="flex-row items-center mb-6">
-              <Text className="text-[22px] mr-3">💊</Text>
-              <Text className="text-[18px] font-semibold text-[#262321]">Patients to Dispense Medication</Text>
+            <View className="flex-row items-center mb-4">
+              <Text className="text-[18px] mr-2">💊</Text>
+              <Text className="text-[16px] font-semibold text-[#262321]">Patients to Dispense Medication</Text>
             </View>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-6">
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
               <View className="flex-row">
-                <TouchableOpacity className="rounded-[14px] bg-[#F5A74F] px-5 py-4 mr-3 flex-row items-center">
-                  <Ionicons name="layers-outline" size={18} color="#1F1D1B" />
-                  <Text className="text-[16px] text-[#1F1D1B] ml-3">All Wards</Text>
+                <TouchableOpacity onPress={() => setSelectedWardFilter('all')} className={`rounded-[10px] px-4 py-2.5 mr-2 flex-row items-center ${selectedWardFilter === 'all' ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}>
+                  <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
+                  <Text className="text-[13px] text-[#1F1D1B] ml-2">All Wards</Text>
                 </TouchableOpacity>
-                <TouchableOpacity className="rounded-[14px] bg-white border border-[#ECE4D9] px-5 py-4 mr-3 flex-row items-center">
-                  <Ionicons name="layers-outline" size={18} color="#1F1D1B" />
-                  <Text className="text-[16px] text-[#1F1D1B] ml-3">Ward A (Floor 1)</Text>
+                <TouchableOpacity onPress={() => setSelectedWardFilter('ward-a')} className={`rounded-[10px] px-4 py-2.5 mr-2 flex-row items-center ${selectedWardFilter === 'ward-a' ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}>
+                  <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
+                  <Text className="text-[13px] text-[#1F1D1B] ml-2">Ward A (Floor 1)</Text>
                 </TouchableOpacity>
-                <TouchableOpacity className="rounded-[14px] bg-white border border-[#ECE4D9] px-5 py-4 flex-row items-center">
-                  <Ionicons name="layers-outline" size={18} color="#1F1D1B" />
-                  <Text className="text-[16px] text-[#1F1D1B] ml-3">Ward B</Text>
+                <TouchableOpacity onPress={() => setSelectedWardFilter('ward-b')} className={`rounded-[10px] px-4 py-2.5 flex-row items-center ${selectedWardFilter === 'ward-b' ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}>
+                  <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
+                  <Text className="text-[13px] text-[#1F1D1B] ml-2">Ward B</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
 
-            {patientCards.map((patient) => (
-              <PatientCard key={patient.id} patient={patient} />
+            {filteredPatientCards.map((patient) => (
+              <PatientCard
+                key={patient.id}
+                patient={patient}
+                onPress={() => openPatientDetail(patient.id)}
+                onMorePress={() => showPatientActions(patient)}
+              />
             ))}
 
-            <TouchableOpacity className="rounded-[14px] bg-[#F5A74F] py-5 items-center mt-2">
-              <Text className="text-[18px] font-semibold text-[#22201E]">View All</Text>
+            <TouchableOpacity onPress={() => router.push('/patients')} className="rounded-[12px] bg-[#F5A74F] py-4 items-center mt-2">
+              <Text className="text-[15px] font-semibold text-[#22201E]">View All</Text>
             </TouchableOpacity>
           </View>
         </View>

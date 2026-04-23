@@ -4,11 +4,12 @@
  */
 
 import React from 'react'
-import { Image, Text, View } from 'react-native'
+import { Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { Card } from '../ui/Card'
 import { Badge } from '../ui/Badge'
 import type { PatientsRow } from '../../types/database'
+import { PatientAvatar } from './PatientAvatar'
 
 type PatientStatus = 'normal' | 'warning' | 'confirmed'
 
@@ -39,15 +40,6 @@ function getStatusBadgeProps(status: PatientStatus): { status: React.ComponentPr
   }
 }
 
-function Initials({ name }: { name: string }) {
-  const initial = name.trim()[0] ?? '?'
-  return (
-    <View className="w-12 h-12 rounded-[18px] bg-[#F6EBDD] items-center justify-center">
-      <Text className="text-[#B76819] font-bold text-lg">{initial}</Text>
-    </View>
-  )
-}
-
 export function PatientRow({ patient, status = 'normal', onPress, testID }: PatientRowProps) {
   const age = patient.date_of_birth ? getAge(patient.date_of_birth) : null
   const badge = getStatusBadgeProps(status)
@@ -56,15 +48,7 @@ export function PatientRow({ patient, status = 'normal', onPress, testID }: Pati
     <Card onPress={onPress} testID={testID} className="mb-3 bg-[#FFF9F2]">
       <View className="flex-row items-center min-h-[48px]">
         <View className="mr-3">
-          {patient.photo_url ? (
-            <Image
-              source={{ uri: patient.photo_url }}
-              className="w-12 h-12 rounded-[18px]"
-              resizeMode="cover"
-            />
-          ) : (
-            <Initials name={patient.name} />
-          )}
+          <PatientAvatar name={patient.name} photoUrl={patient.photo_url} size={48} />
         </View>
 
         <View className="flex-1">

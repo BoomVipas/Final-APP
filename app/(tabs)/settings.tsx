@@ -1,325 +1,429 @@
-/**
- * app/(tabs)/settings.tsx
- * Profile / Settings screen — Figma redesign (2026-04-22)
- *
- * NOTE: Uses a plain View for the header background (#F2B860) instead of
- * expo-linear-gradient because that package is not yet installed.
- * Run `npx expo install expo-linear-gradient` and swap in LinearGradient
- * when ready.
- */
-
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Alert,
+  Pressable,
   ScrollView,
+  StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
-import { useAuthStore } from '../../src/stores/authStore'
+import { Ionicons } from '@expo/vector-icons'
+import { useRouter } from 'expo-router'
+import { useIsFocused } from '@react-navigation/native'
 
-// ─── Role label map ────────────────────────────────────────────────────────────
-const ROLE_LABELS: Record<string, string> = {
-  nurse: 'Nurse Manager',
+import { useAuthStore } from '../../src/stores/authStore'
+import { supabase } from '../../src/lib/supabase'
+import type { UserRole, UsersRow } from '../../src/types/database'
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  admin: 'Administrator',
   caregiver: 'Caregiver',
-  admin: 'Admin',
+  nurse: 'Nurse Manager',
 }
 
-// ─── Reusable menu row ─────────────────────────────────────────────────────────
-function MenuRow({
-  icon,
-  label,
-  onPress,
-}: {
+const CARD_SHADOW = {
+  shadowColor: '#8A6440',
+  shadowOpacity: 0.12,
+  shadowRadius: 18,
+  shadowOffset: { width: 0, height: 10 },
+  elevation: 5,
+}
+
+type MenuItemProps = {
   icon: React.ComponentProps<typeof Ionicons>['name']
   label: string
-  onPress?: () => void
-}) {
+  onPress: () => void
+}
+
+function MenuItem({ icon, label, onPress }: MenuItemProps) {
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      className="flex-row items-center min-h-[52px] px-4 py-3"
-    >
-      <Ionicons name={icon} size={20} color="#6B6B6B" style={{ marginRight: 14 }} />
-      <Text className="flex-1 text-[15px] text-[#2E2E2E] font-medium">{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color="#C0C0C0" />
-    </TouchableOpacity>
+    <Pressable onPress={onPress} style={styles.menuRow}>
+      <View style={styles.menuIconWrap}>
+        <Ionicons name={icon} size={20} color="#32302F" />
+      </View>
+      <Text style={styles.menuLabel}>{label}</Text>
+      <Ionicons name="chevron-forward" size={18} color="#403D3C" />
+    </Pressable>
   )
 }
 
-// ─── Thin separator ────────────────────────────────────────────────────────────
-function Separator() {
-  return <View className="h-px bg-[#F0EDED] mx-4" />
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <Text style={styles.sectionTitle}>{children}</Text>
 }
 
-// ─── Section label ─────────────────────────────────────────────────────────────
-function SectionLabel({ title }: { title: string }) {
-  return (
-    <Text className="text-xs text-[#9E9E9E] font-semibold uppercase tracking-wider ml-4 mt-5 mb-2">
-      {title}
-    </Text>
-  )
+async function fetchProfile(userId: string): Promise<UsersRow | null> {
+  const { data } = await supabase
+    .from('users')
+    .select('id, email, name, phone, role, ward_id, created_at')
+    .eq('id', userId)
+    .maybeSingle()
+
+  return (data as UsersRow | null) ?? null
 }
 
-// ─── Shared card shadow style ──────────────────────────────────────────────────
-const cardShadow = {
-  shadowColor: '#000',
-  shadowOpacity: 0.05,
-  shadowRadius: 6,
-  shadowOffset: { width: 0, height: 2 },
-  elevation: 2,
-}
-
-// ─── Main screen ───────────────────────────────────────────────────────────────
 export default function SettingsScreen() {
+  const router = useRouter()
+  const isFocused = useIsFocused()
   const { user, signOut } = useAuthStore()
+  const [profile, setProfile] = useState<UsersRow | null>(user)
 
-  const displayName = user?.name ?? 'Peeraya'
-  const roleKey = user?.role ?? 'nurse'
-  const roleLabel = ROLE_LABELS[roleKey] ?? 'Nurse Manager'
-  const avatarLetter = displayName.trim()[0]?.toUpperCase() ?? 'P'
+  useEffect(() => {
+    setProfile(user)
+  }, [user])
+
+  useEffect(() => {
+    let active = true
+
+    if (!isFocused || !user?.id) return () => { active = false }
+
+    ;(async () => {
+      const latest = await fetchProfile(user.id)
+      if (active && latest) {
+        setProfile(latest)
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [isFocused, user?.id])
+
+  const currentProfile = profile ?? user
+  const displayName = currentProfile?.name?.trim() || 'Peeraya'
+  const role = currentProfile?.role ?? 'nurse'
+  const roleLabel = ROLE_LABELS[role]
+  const showReport = role === 'admin' || role === 'nurse'
+  const initials = displayName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('')
+    .slice(0, 2) || 'P'
 
   const handleSignOut = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOut()
-            } catch {
-              Alert.alert('Error', 'Unable to logout. Please try again.')
-            }
-          },
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await signOut()
+          } catch {
+            Alert.alert('Error', 'Unable to logout right now.')
+          }
         },
-      ],
-    )
+      },
+    ])
   }
 
-  const handleNotImplemented = (feature: string) => {
-    Alert.alert(feature, 'This feature will be available soon.')
+  const handleNotifications = () => {
+    router.push('/notifications')
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F5F0E8]" edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
       <ScrollView
+        style={styles.screen}
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 32 }}
       >
-        {/* ── Header (warm orange, ~220px) ──────────────────────────────── */}
         <LinearGradient
-          colors={['#F2C060', '#EEA060']}
+          colors={['#FFF7ED', '#FDD8AB', '#F6A84C']}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            minHeight: 220,
-            paddingTop: 20,
-            paddingBottom: 28,
-            paddingHorizontal: 20,
-            overflow: 'hidden',
-          }}
+          end={{ x: 0.95, y: 1 }}
+          style={styles.hero}
         >
-          {/* Decorative semi-transparent bubble circles */}
-          <View
-            style={{
-              position: 'absolute',
-              top: -30,
-              right: -30,
-              width: 150,
-              height: 150,
-              borderRadius: 75,
-              backgroundColor: 'rgba(255,255,255,0.18)',
-            }}
-          />
-          <View
-            style={{
-              position: 'absolute',
-              top: 35,
-              right: 55,
-              width: 85,
-              height: 85,
-              borderRadius: 42,
-              backgroundColor: 'rgba(255,255,255,0.13)',
-            }}
-          />
-          <View
-            style={{
-              position: 'absolute',
-              top: 90,
-              right: -12,
-              width: 65,
-              height: 65,
-              borderRadius: 32,
-              backgroundColor: 'rgba(255,255,255,0.10)',
-            }}
-          />
-          <View
-            style={{
-              position: 'absolute',
-              bottom: -20,
-              left: -20,
-              width: 90,
-              height: 90,
-              borderRadius: 45,
-              backgroundColor: 'rgba(255,255,255,0.10)',
-            }}
-          />
+          <View style={styles.heroGlowLeft} />
+          <View style={styles.heroGlowRight} />
+          <View style={styles.heroIllustration}>
+            <View style={styles.heroIllustrationPanel} />
+            <View style={styles.heroIllustrationDesk} />
+            <Ionicons name="people-outline" size={38} color="rgba(59, 50, 45, 0.18)" />
+          </View>
 
-          {/* Profile row */}
-          <View className="flex-row items-center mt-4">
-
-            {/* Avatar with camera icon overlay */}
-            <View style={{ position: 'relative', marginRight: 16 }}>
-              {/* White ring */}
-              <View
-                style={{
-                  width: 108,
-                  height: 108,
-                  borderRadius: 54,
-                  backgroundColor: 'white',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  shadowColor: '#000',
-                  shadowOpacity: 0.15,
-                  shadowRadius: 8,
-                  shadowOffset: { width: 0, height: 2 },
-                  elevation: 5,
-                }}
+          <View style={styles.heroRow}>
+            <View style={styles.avatarOuter}>
+              <LinearGradient
+                colors={['#EFF4F8', '#D9E6F2']}
+                start={{ x: 0.2, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.avatarInner}
               >
-                {/* Coloured avatar circle */}
-                <View
-                  style={{
-                    width: 96,
-                    height: 96,
-                    borderRadius: 48,
-                    backgroundColor: '#EEA060',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{ fontSize: 38, fontWeight: '700', color: '#7A4210' }}>
-                    {avatarLetter}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Camera overlay button */}
-              <TouchableOpacity
-                onPress={() => handleNotImplemented('Change Photo')}
-                activeOpacity={0.8}
-                style={{
-                  position: 'absolute',
-                  bottom: 2,
-                  right: 2,
-                  width: 30,
-                  height: 30,
-                  borderRadius: 15,
-                  backgroundColor: 'white',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  shadowColor: '#000',
-                  shadowOpacity: 0.15,
-                  shadowRadius: 4,
-                  shadowOffset: { width: 0, height: 1 },
-                  elevation: 3,
-                }}
-              >
-                <Ionicons name="camera" size={14} color="#555" />
-              </TouchableOpacity>
+                <Text style={styles.avatarInitials}>{initials}</Text>
+              </LinearGradient>
+              <Pressable style={styles.cameraButton} onPress={() => router.push('/edit-profile')}>
+                <Ionicons name="camera" size={15} color="#2E2C2A" />
+              </Pressable>
             </View>
 
-            {/* Name / role / Edit Profile */}
-            <View className="flex-1">
-              <Text
-                style={{ fontSize: 22, fontWeight: '700', color: '#2E1A0E', lineHeight: 28 }}
-                numberOfLines={1}
-              >
+            <View style={styles.heroTextWrap}>
+              <Text numberOfLines={1} style={styles.heroName}>
                 {displayName}
               </Text>
-              <View className="flex-row items-center mt-1">
-                <Ionicons name="medical" size={13} color="#7A4210" style={{ marginRight: 4 }} />
-                <Text style={{ fontSize: 13, color: '#7A4210', fontWeight: '600' }}>
-                  {roleLabel}
-                </Text>
+              <View style={styles.roleRow}>
+                <Ionicons name="medkit-outline" size={15} color="#33312F" />
+                <Text style={styles.roleText}>{roleLabel}</Text>
               </View>
-
-              {/* Edit Profile pill */}
-              <TouchableOpacity
-                onPress={() => handleNotImplemented('Edit Profile')}
-                activeOpacity={0.75}
-                style={{
-                  alignSelf: 'flex-start',
-                  marginTop: 10,
-                  borderWidth: 1.5,
-                  borderColor: 'white',
-                  borderRadius: 20,
-                  paddingHorizontal: 16,
-                  paddingVertical: 6,
-                  minHeight: 34,
-                  justifyContent: 'center',
-                }}
-              >
-                <Text style={{ color: 'white', fontSize: 12, fontWeight: '600' }}>
-                  Edit Profile
-                </Text>
-              </TouchableOpacity>
+              <Pressable onPress={() => router.push('/edit-profile')} style={styles.editButton}>
+                <Ionicons name="create-outline" size={14} color="#2E2C2A" />
+                <Text style={styles.editButtonText}>Edit Profile</Text>
+              </Pressable>
             </View>
           </View>
         </LinearGradient>
 
-        {/* ── Main Menu ─────────────────────────────────────────────────── */}
-        <SectionLabel title="Main Menu" />
-        <View className="mx-4 bg-white rounded-2xl overflow-hidden" style={cardShadow}>
-          <MenuRow
-            icon="bar-chart-outline"
-            label="Dispensing Report"
-            onPress={() => handleNotImplemented('Dispensing Report')}
-          />
-          <Separator />
-          <MenuRow
-            icon="notifications-outline"
+        <SectionTitle>Main Menu</SectionTitle>
+        <View style={[styles.menuCard, CARD_SHADOW]}>
+          {showReport ? (
+            <>
+              <MenuItem
+                icon="bar-chart"
+                label="Dispensing Report"
+                onPress={() => router.push('/report')}
+              />
+              <View style={styles.divider} />
+            </>
+          ) : null}
+          <MenuItem
+            icon="notifications"
             label="Notifications"
-            onPress={() => handleNotImplemented('Notifications')}
+            onPress={handleNotifications}
           />
         </View>
 
-        {/* ── System ────────────────────────────────────────────────────── */}
-        <SectionLabel title="System" />
-        <View className="mx-4 bg-white rounded-2xl overflow-hidden" style={cardShadow}>
-          <MenuRow
-            icon="settings-outline"
+        <SectionTitle>System</SectionTitle>
+        <View style={[styles.menuCard, CARD_SHADOW]}>
+          <MenuItem
+            icon="settings"
             label="Settings"
-            onPress={() => handleNotImplemented('Settings')}
+            onPress={() => router.push('/preferences')}
           />
-          <Separator />
-          <MenuRow
-            icon="lock-closed-outline"
+          <View style={styles.divider} />
+          <MenuItem
+            icon="lock-closed"
             label="Change Password"
-            onPress={() => handleNotImplemented('Change Password')}
+            onPress={() => router.push('/change-password')}
           />
         </View>
 
-        {/* ── Logout button ─────────────────────────────────────────────── */}
-        <TouchableOpacity
-          onPress={handleSignOut}
-          activeOpacity={0.75}
-          className="mx-4 mt-4 bg-white rounded-2xl min-h-[52px] items-center justify-center"
-          style={cardShadow}
-        >
-          <Text className="text-[15px] font-bold text-[#2E2E2E]">Logout</Text>
-        </TouchableOpacity>
+        <Pressable onPress={handleSignOut} style={[styles.logoutButton, CARD_SHADOW]}>
+          <Text style={styles.logoutText}>Logout</Text>
+        </Pressable>
 
-        {/* ── Version ───────────────────────────────────────────────────── */}
-        <Text className="text-xs text-center text-[#ADADAD] mt-4 mb-8">Version 1.1.2</Text>
+        <Text style={styles.versionText}>Version 1.1.2</Text>
       </ScrollView>
     </SafeAreaView>
   )
 }
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F7F4EE',
+  },
+  screen: {
+    flex: 1,
+    backgroundColor: '#F7F4EE',
+  },
+  content: {
+    paddingBottom: 10,
+  },
+  hero: {
+    minHeight: 220,
+    paddingHorizontal: 18,
+    paddingTop: 30,
+    paddingBottom: 20,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  heroGlowLeft: {
+    position: 'absolute',
+    left: -24,
+    top: 14,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: 'rgba(255,255,255,0.48)',
+  },
+  heroGlowRight: {
+    position: 'absolute',
+    right: -18,
+    bottom: 18,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.20)',
+  },
+  heroIllustration: {
+    position: 'absolute',
+    right: 8,
+    top: 16,
+    width: 160,
+    height: 110,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.7,
+  },
+  heroIllustrationPanel: {
+    position: 'absolute',
+    right: 6,
+    top: 6,
+    width: 104,
+    height: 64,
+    borderRadius: 18,
+    backgroundColor: 'rgba(60, 47, 39, 0.08)',
+  },
+  heroIllustrationDesk: {
+    position: 'absolute',
+    right: 24,
+    bottom: 10,
+    width: 86,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(60, 47, 39, 0.07)',
+  },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 14,
+  },
+  avatarOuter: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    ...CARD_SHADOW,
+  },
+  avatarInner: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitials: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1F2830',
+    letterSpacing: 0.5,
+  },
+  cameraButton: {
+    position: 'absolute',
+    right: -2,
+    bottom: 4,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#EFF0F2',
+  },
+  heroTextWrap: {
+    flex: 1,
+    paddingBottom: 4,
+  },
+  heroName: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: '700',
+    color: '#2F2D2B',
+    marginBottom: 4,
+  },
+  roleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  roleText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#2F2D2B',
+    fontWeight: '500',
+  },
+  editButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  editButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#2F2D2B',
+  },
+  sectionTitle: {
+    marginTop: 20,
+    marginBottom: 8,
+    marginHorizontal: 16,
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#97928B',
+    fontWeight: '400',
+  },
+  menuCard: {
+    marginHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  menuRow: {
+    minHeight: 54,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  menuIconWrap: {
+    width: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  menuLabel: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 21,
+    color: '#2F2D2B',
+    fontWeight: '400',
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#E5E1DB',
+    marginLeft: 16,
+  },
+  logoutButton: {
+    minHeight: 52,
+    marginTop: 20,
+    marginHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutText: {
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '600',
+    color: '#2F2D2B',
+  },
+  versionText: {
+    marginTop: 16,
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#7A756F',
+    textAlign: 'center',
+  },
+})

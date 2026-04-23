@@ -161,14 +161,14 @@ export default function PatientsScreen() {
   const totalWards = visualFallback ? 4 : wardCards.length
 
   return (
-    <SafeAreaView className="flex-1 bg-[#FFF9F1]">
+    <SafeAreaView className="flex-1 bg-[#FFF9F1]" edges={['left', 'right']}>
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: 8 }}
         refreshControl={<RefreshControl refreshing={refreshing || loading} onRefresh={onRefresh} tintColor="#F2A24B" />}
       >
-        <View className="bg-[#F8C27D] px-7 pt-4 pb-7 overflow-hidden">
+        <View className="bg-[#F8C27D] px-7 pt-8 pb-7 overflow-hidden">
           <View className="absolute left-[-40] top-6 w-40 h-40 rounded-full bg-[#F7D8B0] opacity-30" />
           <View className="absolute right-[-20] top-0 w-44 h-44 rounded-full bg-[#F9D9B0] opacity-60" />
           <View className="absolute right-2 top-5 w-28 h-28 rounded-full bg-[#FFE6C8] opacity-60" />

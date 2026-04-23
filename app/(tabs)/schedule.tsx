@@ -16,6 +16,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
+import { useRouter } from 'expo-router'
 import { useAuthStore } from '../../src/stores/authStore'
 import { useMedicationStore, type ScheduleGroup, type ScheduleItem } from '../../src/stores/medicationStore'
 import { MedicationCard } from '../../src/components/shared/MedicationCard'
@@ -191,6 +192,7 @@ function PeriodSection({
 }
 
 export default function ScheduleScreen() {
+  const router = useRouter()
   const { user } = useAuthStore()
   const { scheduleGroups, fetchSchedule, confirmDose, subscribeToRealtime } = useMedicationStore()
 
@@ -250,8 +252,26 @@ export default function ScheduleScreen() {
     }
   }
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back()
+      return
+    }
+    router.replace('/(tabs)')
+  }
+
   return (
     <SafeAreaView className="flex-1 bg-[#F6EFE6]">
+      <View className="px-4 pt-3">
+        <TouchableOpacity
+          onPress={handleBack}
+          activeOpacity={0.85}
+          className="w-12 h-12 rounded-full bg-[#FFF9F2] border border-[#EADBCB] items-center justify-center"
+        >
+          <Ionicons name="chevron-back" size={24} color="#8E4B14" />
+        </TouchableOpacity>
+      </View>
+
       <View className="px-4 pt-3 pb-2">
         <Card className="bg-[#FFF3E5] border-[#E8CFB0]">
           <Text className="text-xs font-semibold uppercase tracking-[1px] text-[#8E4B14]">

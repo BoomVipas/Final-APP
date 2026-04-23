@@ -30,7 +30,20 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loading) return
 
-    const inAuthGroup = segments[0] === '(tabs)' || segments[0] === 'patient' || segments[0] === 'ward' || segments[0] === 'handover' || segments[0] === 'scanner'
+    const protectedRoots = new Set([
+      '(tabs)',
+      'patient',
+      'ward',
+      'handover',
+      'scanner',
+      'notifications',
+      'edit-profile',
+      'change-password',
+      'preferences',
+      'report',
+      'add-medication',
+    ])
+    const inAuthGroup = protectedRoots.has(segments[0] ?? '')
     const inLoginScreen = segments[0] === 'login'
 
     if (AUTH_BYPASS_ENABLED) {

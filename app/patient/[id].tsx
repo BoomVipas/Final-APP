@@ -1,13 +1,9 @@
 /**
  * app/patient/[id].tsx
- * Patient detail screen — redesigned to match new Figma layout.
- * Header: orange gradient with patient info + avatar
- * Stats card overlapping header bottom
- * Tab bar: Medication / Appointments / Device
- * Medication list cards with stock warnings
+ * Figma-inspired patient detail screen with graceful live-data fallbacks.
  */
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   ScrollView,
@@ -16,462 +12,1158 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router'
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { usePatientStore } from '../../src/stores/patientStore'
 import { useAuthStore } from '../../src/stores/authStore'
 import { useMedicationStore, type ScheduleItem } from '../../src/stores/medicationStore'
 import { USE_MOCK, MOCK_PRESCRIPTIONS, mockSelectPatient } from '../../src/mocks'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { supabase } from '../../src/lib/supabase'
+import type { MealTime } from '../../src/types/database'
+import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
 
 type DetailTab = 'medications' | 'appointments' | 'device'
+type WarningTone = 'critical' | 'warning' | null
 
-interface DisplayMed {
-  prescription_id: string
+interface DemoPatientDetail {
+  id: string
+  name: string
+  room_number: string
+  age: number
+  heroMedicationCount: number
+  statType: number
+  statDosePerDay: number
+  statEndDate: number
+  photo_url?: string | null
+}
+
+interface LivePrescription {
+  id: string
   patient_id: string
-  medicine_name: string
   dose_quantity: number
+  meal_times: MealTime[]
   notes: string | null
-  meal_times_active: string[]
-  days_left?: number
-  end_date?: string
-  low_stock?: boolean
-  low_stock_severity?: 'critical' | 'warning'
+  start_date: string
+  end_date: string | null
+  medicines: {
+    id: string
+    name: string
+    strength: string | null
+    dosage_form: string | null
+  } | null
 }
 
-// ─── Mock display data ────────────────────────────────────────────────────────
-
-function getMockMedsDisplay(id: string): DisplayMed[] {
-  return [
-    {
-      prescription_id: 'rx-demo-1',
-      patient_id: id,
-      medicine_name: 'Amlodipine 5 mg',
-      dose_quantity: 1,
-      notes: 'Before bedtime',
-      meal_times_active: ['morning'],
-      days_left: 3,
-      end_date: 'Mar 14',
-      low_stock: true,
-      low_stock_severity: 'critical',
-    },
-    {
-      prescription_id: 'rx-demo-2',
-      patient_id: id,
-      medicine_name: 'Metoprolol 25 mg',
-      dose_quantity: 1,
-      notes: 'Before bedtime',
-      meal_times_active: ['morning'],
-      days_left: 25,
-      low_stock: false,
-    },
-    {
-      prescription_id: 'rx-demo-3',
-      patient_id: id,
-      medicine_name: 'Amlodipine 5 mg',
-      dose_quantity: 1,
-      notes: 'Before bedtime',
-      meal_times_active: ['morning'],
-      days_left: 10,
-      end_date: 'Mar 14',
-      low_stock: true,
-      low_stock_severity: 'warning',
-    },
-  ]
+interface DisplayMedication {
+  id: string
+  medicineName: string
+  doseQuantity: number
+  dosageForm: string | null
+  instructions: string | null
+  mealTimes: MealTime[]
+  daysLeft: number | null
+  endDateLabel: string | null
+  warningTone: WarningTone
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getAge(dateOfBirth: string): number {
-  const dob = new Date(dateOfBirth)
-  const today = new Date()
-  let age = today.getFullYear() - dob.getFullYear()
-  const month = today.getMonth() - dob.getMonth()
-  if (month < 0 || (month === 0 && today.getDate() < dob.getDate())) age--
-  return age
+interface DetailPanelItem {
+  id: string
+  icon: keyof typeof Ionicons.glyphMap
+  title: string
+  subtitle: string
+  meta: string
+  badge: string
+  badgeTone: 'neutral' | 'success' | 'warning'
 }
 
-function scheduleItemToDisplayMed(item: ScheduleItem): DisplayMed {
-  return {
-    prescription_id: item.prescription_id,
-    patient_id: item.patient_id,
-    medicine_name: item.medicine_name + (item.medicine_strength ? ` ${item.medicine_strength}` : ''),
-    dose_quantity: item.dose_quantity,
-    notes: item.notes,
-    meal_times_active: [item.meal_time],
-    low_stock: false,
-  }
-}
+const DISPLAY_MEALS: MealTime[] = ['morning', 'noon', 'evening', 'bedtime']
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-const MEAL_TIME_LABELS: Record<string, string> = {
+const MEAL_LABELS: Record<MealTime, string> = {
   morning: 'Morning',
   noon: 'Noon',
   evening: 'Evening',
   bedtime: 'Night',
 }
 
-function MealTimeChip({ period, active }: { period: string; active: boolean }) {
-  const label = MEAL_TIME_LABELS[period] ?? period
+const DEMO_PATIENTS: Record<string, DemoPatientDetail> = {
+  p1: {
+    id: 'p1',
+    name: 'Mrs. Somsri Phakrammongkol',
+    room_number: 'A-101',
+    age: 79,
+    heroMedicationCount: 9,
+    statType: 16,
+    statDosePerDay: 12,
+    statEndDate: 4,
+  },
+  p2: {
+    id: 'p2',
+    name: 'Mrs. Somchai Rungreang',
+    room_number: 'A-102',
+    age: 79,
+    heroMedicationCount: 12,
+    statType: 16,
+    statDosePerDay: 12,
+    statEndDate: 3,
+  },
+  p3: {
+    id: 'p3',
+    name: 'Mr. Mana Jai',
+    room_number: 'B-203',
+    age: 69,
+    heroMedicationCount: 5,
+    statType: 10,
+    statDosePerDay: 8,
+    statEndDate: 1,
+  },
+  p4: {
+    id: 'p4',
+    name: 'Mrs. Dararat Prasartngam',
+    room_number: 'B-204',
+    age: 80,
+    heroMedicationCount: 11,
+    statType: 15,
+    statDosePerDay: 11,
+    statEndDate: 5,
+  },
+  p5: {
+    id: 'p5',
+    name: 'Mrs. Kanya Singkow',
+    room_number: 'B-205',
+    age: 67,
+    heroMedicationCount: 12,
+    statType: 13,
+    statDosePerDay: 10,
+    statEndDate: 2,
+  },
+}
+
+const DEMO_MEDICATIONS: Record<string, DisplayMedication[]> = {
+  p1: [
+    {
+      id: 'p1-med-1',
+      medicineName: 'Amlodipine 5 mg',
+      doseQuantity: 1,
+      dosageForm: 'tablet',
+      instructions: 'Before bedtime',
+      mealTimes: ['morning'],
+      daysLeft: 3,
+      endDateLabel: 'Mar 14',
+      warningTone: 'critical',
+    },
+    {
+      id: 'p1-med-2',
+      medicineName: 'Metoprolol 25 mg',
+      doseQuantity: 1,
+      dosageForm: 'tablet',
+      instructions: 'Before bedtime',
+      mealTimes: ['morning', 'noon', 'evening', 'bedtime'],
+      daysLeft: 25,
+      endDateLabel: null,
+      warningTone: null,
+    },
+    {
+      id: 'p1-med-3',
+      medicineName: 'Risperidone 2 mg',
+      doseQuantity: 1,
+      dosageForm: 'tablet',
+      instructions: 'After food',
+      mealTimes: ['morning', 'bedtime'],
+      daysLeft: 10,
+      endDateLabel: 'Mar 14',
+      warningTone: 'warning',
+    },
+  ],
+  p2: [
+    {
+      id: 'p2-med-1',
+      medicineName: 'Aspirin 81 mg',
+      doseQuantity: 1,
+      dosageForm: 'tablet',
+      instructions: 'After breakfast',
+      mealTimes: ['morning'],
+      daysLeft: 18,
+      endDateLabel: null,
+      warningTone: null,
+    },
+    {
+      id: 'p2-med-2',
+      medicineName: 'Metformin 500 mg',
+      doseQuantity: 1,
+      dosageForm: 'tablet',
+      instructions: 'After food',
+      mealTimes: ['morning', 'noon', 'evening'],
+      daysLeft: 4,
+      endDateLabel: 'Mar 15',
+      warningTone: 'critical',
+    },
+  ],
+  p3: [
+    {
+      id: 'p3-med-1',
+      medicineName: 'Donepezil 10 mg',
+      doseQuantity: 1,
+      dosageForm: 'tablet',
+      instructions: 'Before bedtime',
+      mealTimes: ['bedtime'],
+      daysLeft: 14,
+      endDateLabel: null,
+      warningTone: null,
+    },
+  ],
+  p4: [
+    {
+      id: 'p4-med-1',
+      medicineName: 'Furosemide 40 mg',
+      doseQuantity: 1,
+      dosageForm: 'tablet',
+      instructions: 'Morning dose',
+      mealTimes: ['morning'],
+      daysLeft: 2,
+      endDateLabel: 'Mar 13',
+      warningTone: 'critical',
+    },
+    {
+      id: 'p4-med-2',
+      medicineName: 'Losartan 50 mg',
+      doseQuantity: 1,
+      dosageForm: 'tablet',
+      instructions: 'After breakfast',
+      mealTimes: ['morning'],
+      daysLeft: 9,
+      endDateLabel: 'Mar 20',
+      warningTone: 'warning',
+    },
+  ],
+  p5: [
+    {
+      id: 'p5-med-1',
+      medicineName: 'Calcium Carbonate',
+      doseQuantity: 2,
+      dosageForm: 'tablets',
+      instructions: 'After lunch',
+      mealTimes: ['noon'],
+      daysLeft: 21,
+      endDateLabel: null,
+      warningTone: null,
+    },
+  ],
+}
+
+const DEFAULT_APPOINTMENTS: DetailPanelItem[] = [
+  {
+    id: 'appt-1',
+    icon: 'calendar-outline',
+    title: 'Medication review',
+    subtitle: 'Ward A nurse station',
+    meta: 'Fri, Mar 14 at 09:30',
+    badge: 'Upcoming',
+    badgeTone: 'success',
+  },
+  {
+    id: 'appt-2',
+    icon: 'clipboard-outline',
+    title: 'Doctor follow-up',
+    subtitle: 'Internal medicine clinic',
+    meta: 'Tue, Mar 18 at 13:00',
+    badge: 'Scheduled',
+    badgeTone: 'neutral',
+  },
+]
+
+const DEFAULT_DEVICES: DetailPanelItem[] = [
+  {
+    id: 'device-1',
+    icon: 'cube-outline',
+    title: 'Cabinet slot A-12',
+    subtitle: 'Linked to the patient medication bin',
+    meta: 'Last synced 2 minutes ago',
+    badge: 'Connected',
+    badgeTone: 'success',
+  },
+  {
+    id: 'device-2',
+    icon: 'scan-outline',
+    title: 'Label scanner',
+    subtitle: 'Ready for medication verification',
+    meta: 'Battery 78%',
+    badge: 'Ready',
+    badgeTone: 'warning',
+  },
+]
+
+function getAge(dateOfBirth: string | null): number | null {
+  if (!dateOfBirth) return null
+
+  const dob = new Date(dateOfBirth)
+  const today = new Date()
+  let age = today.getFullYear() - dob.getFullYear()
+  const monthDelta = today.getMonth() - dob.getMonth()
+
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < dob.getDate())) {
+    age -= 1
+  }
+
+  return age
+}
+
+function formatShortDate(dateValue: string | null): string | null {
+  if (!dateValue) return null
+
+  const value = new Date(dateValue)
+  if (Number.isNaN(value.getTime())) return null
+
+  return value.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function getDaysLeft(dateValue: string | null): number | null {
+  if (!dateValue) return null
+
+  const target = new Date(dateValue)
+  if (Number.isNaN(target.getTime())) return null
+
+  const now = new Date()
+  const midnightNow = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const midnightTarget = new Date(
+    target.getFullYear(),
+    target.getMonth(),
+    target.getDate(),
+  ).getTime()
+
+  return Math.max(0, Math.ceil((midnightTarget - midnightNow) / (1000 * 60 * 60 * 24)))
+}
+
+function getMedicationLabel(quantity: number, dosageForm: string | null) {
+  const normalized = dosageForm?.toLowerCase() ?? ''
+  const unit = normalized.includes('tablet') || normalized.includes('tab') || normalized.includes('เม็ด')
+    ? 'tablet'
+    : 'dose'
+
+  return `${quantity} ${unit}${quantity === 1 ? '' : 's'}`
+}
+
+function buildMedicineName(name: string, strength: string | null) {
+  return strength ? `${name} ${strength}` : name
+}
+
+function groupScheduleItems(items: ScheduleItem[]): DisplayMedication[] {
+  const groups = new Map<string, ScheduleItem[]>()
+
+  for (const item of items) {
+    const current = groups.get(item.prescription_id) ?? []
+    current.push(item)
+    groups.set(item.prescription_id, current)
+  }
+
+  return Array.from(groups.entries()).map(([prescriptionId, groupedItems]) => {
+    const first = groupedItems[0]
+    const mealTimes = DISPLAY_MEALS.filter((mealTime) =>
+      groupedItems.some((entry) => entry.meal_time === mealTime),
+    )
+
+    return {
+      id: prescriptionId,
+      medicineName: buildMedicineName(first.medicine_name, first.medicine_strength),
+      doseQuantity: first.dose_quantity,
+      dosageForm: first.dosage_form,
+      instructions: first.notes,
+      mealTimes,
+      daysLeft: null,
+      endDateLabel: null,
+      warningTone: null,
+    }
+  })
+}
+
+function getWarningTone(daysLeft: number | null): WarningTone {
+  if (daysLeft === null) return null
+  if (daysLeft <= 3) return 'critical'
+  if (daysLeft <= 10) return 'warning'
+  return null
+}
+
+function Avatar({ photoUrl, name }: { photoUrl: string | null | undefined; name: string }) {
+  return (
+    <PatientAvatar name={name} photoUrl={photoUrl} size={92} borderWidth={3} borderColor="#FFFFFF">
+      <View
+        style={{
+          position: 'absolute',
+          bottom: 14,
+          right: 14,
+          width: 18,
+          height: 18,
+          borderRadius: 9,
+          backgroundColor: '#FFFFFF',
+          opacity: 0.25,
+        }}
+        accessible={false}
+      />
+      <Text
+        style={{
+          position: 'absolute',
+          left: -9999,
+          opacity: 0,
+        }}
+      >
+        {name}
+      </Text>
+    </PatientAvatar>
+  )
+}
+
+function StatBlock({ value, label }: { value: number; label: string }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ fontSize: 24, lineHeight: 30, fontWeight: '700', color: '#2F2E2D' }}>{value}</Text>
+      <Text style={{ marginTop: 8, fontSize: 12, lineHeight: 16, color: '#7E8797' }}>{label}</Text>
+    </View>
+  )
+}
+
+function MedicationChip({ label, active }: { label: string; active: boolean }) {
   return (
     <View
-      className={`px-3 py-1 rounded-full border mr-2 mb-1 ${
-        active ? 'border-teal-400 bg-teal-50' : 'border-gray-200 bg-white'
-      }`}
+      style={{
+        flex: 1,
+        minHeight: 40,
+        borderRadius: 10,
+        borderWidth: active ? 2 : 1,
+        borderColor: active ? '#16C7A4' : '#E5E5E5',
+        backgroundColor: active ? '#DBF8F0' : '#F6F6F6',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
     >
-      <Text className={`text-xs font-medium ${active ? 'text-teal-600' : 'text-gray-400'}`}>
+      <Text
+        style={{
+          fontSize: 14,
+          lineHeight: 20,
+          fontWeight: active ? '600' : '500',
+          color: active ? '#15B896' : '#979797',
+        }}
+      >
         {label}
       </Text>
     </View>
   )
 }
 
-function MedCard({ med }: { med: DisplayMed }) {
-  const allPeriods = ['morning', 'noon', 'evening', 'bedtime']
+function MedicationCard({ medication }: { medication: DisplayMedication }) {
+  const warningBackground = medication.warningTone === 'critical' ? '#FDEEEF' : '#FFF7E9'
+  const warningColor = medication.warningTone === 'critical' ? '#EF5D5D' : '#F3A24D'
+  const warningIcon = medication.warningTone === 'critical' ? 'alert-circle' : 'warning'
 
   return (
-    <View className="bg-white rounded-2xl mx-4 mb-3 p-4 shadow-sm" style={{ shadowColor: '#000', shadowOpacity: 0.06, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2 }}>
-      {/* Top row: name + menu */}
-      <View className="flex-row items-center justify-between mb-1">
-        <Text className="text-base font-bold text-gray-900 flex-1 mr-2" numberOfLines={1}>
-          {med.medicine_name}
-        </Text>
-        <TouchableOpacity className="min-h-[36px] min-w-[36px] items-center justify-center">
-          <Ionicons name="ellipsis-vertical" size={18} color="#9CA3AF" />
+    <View
+      style={{
+        backgroundColor: '#FFFFFF',
+        borderRadius: 20,
+        paddingHorizontal: 14,
+        paddingTop: 14,
+        paddingBottom: 14,
+        shadowColor: '#D7CCBB',
+        shadowOpacity: 0.22,
+        shadowOffset: { width: 0, height: 8 },
+        shadowRadius: 16,
+        elevation: 4,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <View style={{ flex: 1, paddingRight: 8 }}>
+          <Text
+            style={{
+              fontSize: 15,
+              lineHeight: 21,
+              fontWeight: '700',
+              color: '#2F2E2D',
+            }}
+            numberOfLines={1}
+          >
+            {medication.medicineName}
+          </Text>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+            <Ionicons name="medkit-outline" size={14} color="#7E8797" />
+            <Text style={{ marginLeft: 6, fontSize: 13, lineHeight: 18, color: '#727C8F' }}>
+              {getMedicationLabel(medication.doseQuantity, medication.dosageForm)}
+              {medication.instructions ? ` • ${medication.instructions}` : ''}
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          accessibilityRole="button"
+          style={{
+            minWidth: 32,
+            minHeight: 32,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginTop: -2,
+            marginRight: -4,
+          }}
+        >
+          <Ionicons name="ellipsis-vertical" size={18} color="#4C4845" />
         </TouchableOpacity>
       </View>
 
-      {/* Sub row: dose + notes */}
-      <View className="flex-row items-center mb-3">
-        <Ionicons name="medkit-outline" size={13} color="#9CA3AF" />
-        <Text className="text-sm text-gray-400 ml-1">
-          {med.dose_quantity} tablet{med.dose_quantity !== 1 ? 's' : ''}
-          {med.notes ? `  •  ${med.notes}` : ''}
-        </Text>
-      </View>
-
-      {/* Meal time chips */}
-      <View className="flex-row flex-wrap mb-2">
-        {allPeriods.map((period) => (
-          <MealTimeChip
-            key={period}
-            period={period}
-            active={med.meal_times_active.includes(period)}
+      <View style={{ flexDirection: 'row', gap: 6, marginTop: 12 }}>
+        {DISPLAY_MEALS.map((mealTime) => (
+          <MedicationChip
+            key={mealTime}
+            label={MEAL_LABELS[mealTime]}
+            active={medication.mealTimes.includes(mealTime)}
           />
         ))}
       </View>
 
-      {/* Stock warning */}
-      {med.low_stock && med.low_stock_severity === 'critical' && (
-        <View className="mt-2 pt-3 border-t border-gray-100">
-          <View className="flex-row items-start justify-between">
-            <View className="flex-row items-start flex-1 mr-2">
-              <Ionicons name="alert-circle" size={16} color="#EF4444" style={{ marginTop: 1 }} />
-              <View className="ml-2 flex-1">
-                <Text className="text-sm font-bold text-red-500">
-                  {med.days_left} days left{med.end_date ? `  •  Ends on ${med.end_date}` : ''}
-                </Text>
-                <Text className="text-xs text-gray-400 mt-0.5">
-                  Medication will run out before the next refill
-                </Text>
-              </View>
+      {medication.warningTone ? (
+        <View
+          style={{
+            marginTop: 12,
+            borderRadius: 12,
+            backgroundColor: warningBackground,
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <View style={{ flex: 1, paddingRight: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name={warningIcon} size={16} color={warningColor} />
+              <Text
+                style={{
+                  marginLeft: 6,
+                  fontSize: 13,
+                  lineHeight: 18,
+                  fontWeight: '700',
+                  color: warningColor,
+                }}
+              >
+                {medication.daysLeft} days left
+                {medication.endDateLabel ? ` · Ends on ${medication.endDateLabel}` : ''}
+              </Text>
             </View>
-            <TouchableOpacity
-              className="border border-gray-300 rounded-full px-3 py-1.5 min-h-[36px] items-center justify-center"
-            >
-              <Text className="text-xs font-medium text-gray-600">Set Reminder</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
 
-      {med.low_stock && med.low_stock_severity === 'warning' && (
-        <View className="mt-2 pt-3 border-t border-gray-100">
-          <View className="flex-row items-start justify-between">
-            <View className="flex-row items-start flex-1 mr-2">
-              <Ionicons name="alert-circle" size={16} color="#F59E0B" style={{ marginTop: 1 }} />
-              <View className="ml-2 flex-1">
-                <Text className="text-sm font-bold text-amber-500">
-                  {med.days_left} days left{med.end_date ? `  •  Ends on ${med.end_date}` : ''}
-                </Text>
-                <Text className="text-xs text-gray-400 mt-0.5">
-                  Medication will run out before the next refill
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              className="border border-gray-300 rounded-full px-3 py-1.5 min-h-[36px] items-center justify-center"
+            <Text
+              style={{
+                marginTop: 3,
+                marginLeft: 22,
+                fontSize: 11,
+                lineHeight: 15,
+                color: '#6F7582',
+              }}
             >
-              <Text className="text-xs font-medium text-gray-600">Set Reminder</Text>
-            </TouchableOpacity>
+              Medication will run out before the next refill
+            </Text>
           </View>
-        </View>
-      )}
 
-      {!med.low_stock && typeof med.days_left === 'number' && (
-        <View className="mt-2 pt-3 border-t border-gray-100 flex-row items-center">
-          <Ionicons name="time-outline" size={13} color="#9CA3AF" />
-          <Text className="text-xs text-gray-400 ml-1">{med.days_left} days left</Text>
+          <TouchableOpacity
+            style={{
+              minHeight: 36,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: '#E5E3DE',
+              backgroundColor: '#FFFFFF',
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingHorizontal: 10,
+            }}
+          >
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#3A3938' }}>Set Reminder</Text>
+          </TouchableOpacity>
         </View>
-      )}
+      ) : medication.daysLeft !== null ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12 }}>
+          <Ionicons name="time-outline" size={15} color="#2F2E2D" />
+          <Text style={{ marginLeft: 6, fontSize: 13, lineHeight: 18, color: '#3A3938' }}>
+            {medication.daysLeft} days left
+          </Text>
+        </View>
+      ) : null}
     </View>
   )
 }
 
-// ─── Main screen ──────────────────────────────────────────────────────────────
+function DetailInfoCard({ item }: { item: DetailPanelItem }) {
+  const badgeBackground = item.badgeTone === 'success'
+    ? '#E6FBF5'
+    : item.badgeTone === 'warning'
+      ? '#FFF0DB'
+      : '#F0F2F5'
+  const badgeColor = item.badgeTone === 'success'
+    ? '#0FB38D'
+    : item.badgeTone === 'warning'
+      ? '#E89A35'
+      : '#687385'
+
+  return (
+    <View
+      style={{
+        backgroundColor: '#FFFFFF',
+        borderRadius: 24,
+        paddingHorizontal: 18,
+        paddingVertical: 18,
+        shadowColor: '#D7CCBB',
+        shadowOpacity: 0.22,
+        shadowOffset: { width: 0, height: 14 },
+        shadowRadius: 26,
+        elevation: 4,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+        <View
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 14,
+            backgroundColor: '#FFF4E2',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: 14,
+          }}
+        >
+          <Ionicons name={item.icon} size={22} color="#EFA247" />
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 18, lineHeight: 24, fontWeight: '700', color: '#2F2E2D', flex: 1, paddingRight: 12 }}>
+              {item.title}
+            </Text>
+            <View
+              style={{
+                borderRadius: 999,
+                backgroundColor: badgeBackground,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+              }}
+            >
+              <Text style={{ fontSize: 12, lineHeight: 16, fontWeight: '600', color: badgeColor }}>
+                {item.badge}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={{ marginTop: 6, fontSize: 15, lineHeight: 21, color: '#727C8F' }}>{item.subtitle}</Text>
+          <Text style={{ marginTop: 4, fontSize: 14, lineHeight: 20, color: '#9AA2B1' }}>{item.meta}</Text>
+        </View>
+      </View>
+    </View>
+  )
+}
+
+function ScreenEmptyState({
+  icon,
+  title,
+  body,
+}: {
+  icon: keyof typeof Ionicons.glyphMap
+  title: string
+  body: string
+}) {
+  return (
+    <View
+      style={{
+        backgroundColor: '#FFFFFF',
+        borderRadius: 26,
+        paddingHorizontal: 24,
+        paddingVertical: 34,
+        alignItems: 'center',
+        shadowColor: '#D7CCBB',
+        shadowOpacity: 0.2,
+        shadowOffset: { width: 0, height: 12 },
+        shadowRadius: 24,
+        elevation: 3,
+      }}
+    >
+      <View
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 32,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#FFF4E2',
+        }}
+      >
+        <Ionicons name={icon} size={28} color="#EFA247" />
+      </View>
+      <Text style={{ marginTop: 18, fontSize: 18, lineHeight: 24, fontWeight: '700', color: '#2F2E2D' }}>
+        {title}
+      </Text>
+      <Text
+        style={{
+          marginTop: 8,
+          fontSize: 14,
+          lineHeight: 20,
+          color: '#7E8797',
+          textAlign: 'center',
+        }}
+      >
+        {body}
+      </Text>
+    </View>
+  )
+}
 
 export default function PatientDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>()
+  const params = useLocalSearchParams<{ id?: string | string[] }>()
   const router = useRouter()
+  const patientId = Array.isArray(params.id) ? params.id[0] : params.id
   const { selectedPatient, loading, fetchPatientDetail } = usePatientStore()
   const { user } = useAuthStore()
   const { scheduleGroups, fetchSchedule } = useMedicationStore()
 
   const [activeTab, setActiveTab] = useState<DetailTab>('medications')
-
-  const today = new Date().toISOString().slice(0, 10)
-
-  const load = useCallback(async () => {
-    if (!id) return
-    if (USE_MOCK) {
-      mockSelectPatient(id)
-      return
-    }
-    await fetchPatientDetail(id)
-    const wardId = user?.ward_id ?? ''
-    if (wardId) await fetchSchedule(wardId, today)
-  }, [fetchPatientDetail, fetchSchedule, id, today, user])
+  const [prescriptions, setPrescriptions] = useState<LivePrescription[]>([])
+  const [prescriptionsLoading, setPrescriptionsLoading] = useState(false)
 
   useEffect(() => {
-    load()
-  }, [load])
+    if (!patientId) return
 
-  const patient = selectedPatient?.id === id ? selectedPatient : null
-  const allItems = scheduleGroups.flatMap((group) => group.items)
-  const patientMeds = allItems.filter((item) => item.patient_id === id)
-  const mockRxForPatient = USE_MOCK
-    ? (MOCK_PRESCRIPTIONS as ScheduleItem[]).filter((item) => item.patient_id === id)
-    : []
+    const currentPatientId = patientId
+    const today = new Date().toISOString().slice(0, 10)
 
-  // Loading state
-  if (loading && !patient) {
+    async function load() {
+      if (USE_MOCK) {
+        mockSelectPatient(currentPatientId)
+      } else {
+        await fetchPatientDetail(currentPatientId)
+      }
+
+      if (user?.ward_id) {
+        await fetchSchedule(user.ward_id, today)
+      }
+
+      if (!USE_MOCK) {
+        setPrescriptionsLoading(true)
+
+        const { data, error } = await supabase
+          .from('patient_prescriptions')
+          .select(`
+            id,
+            patient_id,
+            dose_quantity,
+            meal_times,
+            notes,
+            start_date,
+            end_date,
+            medicines (
+              id,
+              name,
+              strength,
+              dosage_form
+            )
+          `)
+          .eq('patient_id', currentPatientId)
+          .eq('is_active', true)
+          .order('start_date', { ascending: false })
+
+        if (!error) {
+          setPrescriptions((data ?? []) as unknown as LivePrescription[])
+        }
+
+        setPrescriptionsLoading(false)
+      }
+    }
+
+    void load()
+  }, [fetchPatientDetail, fetchSchedule, patientId, user?.ward_id])
+
+  const demoPatient = patientId ? DEMO_PATIENTS[patientId] : null
+  const storePatient = selectedPatient?.id === patientId ? selectedPatient : null
+  const resolvedPatient = storePatient ?? null
+
+  if ((loading || prescriptionsLoading) && !resolvedPatient && !demoPatient) {
     return (
-      <SafeAreaView className="flex-1 bg-[#F5F0E8] items-center justify-center">
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F7F2EA', alignItems: 'center', justifyContent: 'center' }}>
         <Stack.Screen options={{ headerShown: false }} />
-        <ActivityIndicator size="large" color="#E8721A" />
+        <ActivityIndicator size="large" color="#EFA247" />
       </SafeAreaView>
     )
   }
 
-  // Not found state
-  if (!patient) {
+  if (!resolvedPatient && !demoPatient) {
     return (
-      <SafeAreaView className="flex-1 bg-[#F5F0E8] items-center justify-center px-6">
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#F7F2EA', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
         <Stack.Screen options={{ headerShown: false }} />
-        <View className="bg-white rounded-2xl items-center py-10 w-full shadow-sm">
-          <Text className="text-4xl mb-4">⚠️</Text>
-          <Text className="text-base font-bold text-gray-800 text-center">Patient not found</Text>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            className="mt-4 min-h-[48px] px-6 items-center justify-center"
-          >
-            <Text className="text-[#E8721A] font-semibold">Go Back</Text>
-          </TouchableOpacity>
-        </View>
+        <ScreenEmptyState
+          icon="person-outline"
+          title="Patient not found"
+          body="The detail record could not be loaded. Go back and reopen the patient from the ward list."
+        />
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={{
+            marginTop: 20,
+            minHeight: 48,
+            borderRadius: 999,
+            paddingHorizontal: 22,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#EFA247',
+          }}
+        >
+          <Text style={{ color: '#2F2E2D', fontSize: 15, fontWeight: '700' }}>Go Back</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     )
   }
 
-  const age = patient.date_of_birth ? getAge(patient.date_of_birth) : null
+  const patientName = resolvedPatient?.name ?? demoPatient?.name ?? 'Patient'
+  const roomNumber = resolvedPatient?.room_number ?? demoPatient?.room_number ?? 'A-101'
+  const age = getAge(resolvedPatient?.date_of_birth ?? null) ?? demoPatient?.age ?? null
+  const heroMedicationCount = demoPatient?.heroMedicationCount ?? prescriptions.length
+  const photoUrl = resolvedPatient?.photo_url ?? demoPatient?.photo_url ?? null
 
-  // Build displayMeds
-  let displayMeds: DisplayMed[]
-  if (USE_MOCK) {
-    const fallback = getMockMedsDisplay(id ?? '')
-    const fromStore = mockRxForPatient.map(scheduleItemToDisplayMed)
-    displayMeds = fromStore.length > 0 ? fromStore : fallback
-  } else {
-    displayMeds = patientMeds.map(scheduleItemToDisplayMed)
-  }
+  const patientScheduleItems = scheduleGroups
+    .flatMap((group) => group.items)
+    .filter((item) => item.patient_id === patientId)
 
-  // Stats
-  const statType = USE_MOCK ? 16 : displayMeds.length
-  const statDose = USE_MOCK ? 12 : displayMeds.reduce((sum, m) => sum + m.dose_quantity, 0)
-  const statEndDate = USE_MOCK ? 4 : displayMeds.filter((m) => m.end_date).length
+  const liveMedications: DisplayMedication[] = prescriptions.map((prescription) => {
+    const daysLeft = getDaysLeft(prescription.end_date)
 
-  const TABS: { key: DetailTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-    { key: 'medications', label: 'Medication', icon: 'medical-outline' },
+    return {
+      id: prescription.id,
+      medicineName: buildMedicineName(
+        prescription.medicines?.name ?? 'Medication',
+        prescription.medicines?.strength ?? null,
+      ),
+      doseQuantity: prescription.dose_quantity,
+      dosageForm: prescription.medicines?.dosage_form ?? 'tablet',
+      instructions: prescription.notes,
+      mealTimes: prescription.meal_times,
+      daysLeft,
+      endDateLabel: formatShortDate(prescription.end_date),
+      warningTone: getWarningTone(daysLeft),
+    }
+  })
+
+  const groupedScheduleMedications = groupScheduleItems(
+    patientScheduleItems.length > 0
+      ? patientScheduleItems
+      : (MOCK_PRESCRIPTIONS as ScheduleItem[]).filter((item) => item.patient_id === patientId),
+  )
+
+  const displayMedications = liveMedications.length > 0
+    ? liveMedications
+    : groupedScheduleMedications.length > 0
+      ? groupedScheduleMedications
+      : patientId && DEMO_MEDICATIONS[patientId]
+        ? DEMO_MEDICATIONS[patientId]
+        : []
+
+  const statType = demoPatient?.statType ?? displayMedications.length
+  const statDosePerDay = demoPatient?.statDosePerDay ?? displayMedications.reduce(
+    (total, medication) => total + (medication.doseQuantity * medication.mealTimes.length),
+    0,
+  )
+  const statEndDate = demoPatient?.statEndDate ?? displayMedications.filter(
+    (medication) => medication.endDateLabel || medication.warningTone,
+  ).length
+
+  const detailTabs: Array<{
+    key: DetailTab
+    label: string
+    icon: keyof typeof Ionicons.glyphMap
+  }> = [
+    { key: 'medications', label: 'Medication', icon: 'medkit-outline' },
     { key: 'appointments', label: 'Appointments', icon: 'people-outline' },
-    { key: 'device', label: 'Device', icon: 'hardware-chip-outline' },
+    { key: 'device', label: 'Device', icon: 'pulse-outline' },
   ]
 
+  const appointments = DEFAULT_APPOINTMENTS.map((item, index) => ({
+    ...item,
+    id: `${item.id}-${patientId ?? 'patient'}`,
+    subtitle: index === 0 ? `${patientName} medication follow-up` : item.subtitle,
+  }))
+
+  const devices = DEFAULT_DEVICES.map((item, index) => ({
+    ...item,
+    id: `${item.id}-${patientId ?? 'patient'}`,
+    subtitle: index === 0 ? `Assigned to Room ${roomNumber}` : item.subtitle,
+  }))
+
   return (
-    <View className="flex-1 bg-[#F5F0E8]">
+    <View style={{ flex: 1, backgroundColor: '#F7F2EA' }}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* ── Orange gradient header ── */}
       <LinearGradient
-        colors={['#F2C060', '#E8A050']}
+        colors={['#F9E1BE', '#F5BC77', '#ECA44E']}
+        locations={[0, 0.55, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={{ paddingBottom: 48 }}
+        style={{
+          paddingBottom: 72,
+          overflow: 'hidden',
+        }}
       >
         <SafeAreaView edges={['top']}>
-          {/* Decorative bubbles */}
           <View
-            className="absolute top-0 right-8 w-32 h-32 rounded-full opacity-20"
-            style={{ backgroundColor: '#FFF3CC' }}
-            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: -26,
+              left: -54,
+              width: 164,
+              height: 164,
+              borderRadius: 82,
+              backgroundColor: '#FFF3DE',
+              opacity: 0.3,
+            }}
+            accessible={false}
           />
           <View
-            className="absolute top-12 right-0 w-20 h-20 rounded-full opacity-15"
-            style={{ backgroundColor: '#FFE0A0' }}
-            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 8,
+              right: -20,
+              width: 176,
+              height: 176,
+              borderRadius: 88,
+              backgroundColor: '#FFD9A8',
+              opacity: 0.34,
+            }}
+            accessible={false}
+          />
+          <View
+            style={{
+              position: 'absolute',
+              right: 34,
+              top: 22,
+              width: 114,
+              height: 114,
+              borderRadius: 57,
+              borderWidth: 1.5,
+              borderColor: 'rgba(255,255,255,0.28)',
+            }}
+            accessible={false}
           />
 
-          {/* Top bar */}
-          <View className="flex-row items-center justify-between px-4 pt-2 pb-3">
-            <TouchableOpacity
-              onPress={() => router.back()}
-              className="min-h-[48px] min-w-[48px] items-center justify-center"
-            >
-              <Ionicons name="chevron-back" size={24} color="#fff" />
-            </TouchableOpacity>
-            <Text className="text-base font-semibold text-white">Patient Detail</Text>
-            {/* Spacer to balance back button */}
-            <View className="w-[48px]" />
-          </View>
+          <View style={{ paddingHorizontal: 18, paddingTop: 6 }}>
+            <View style={{ position: 'relative', minHeight: 44, justifyContent: 'center' }}>
+              <TouchableOpacity
+                onPress={() => router.back()}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="chevron-back" size={28} color="#2F2E2D" />
+              </TouchableOpacity>
 
-          {/* Patient info + avatar */}
-          <View className="flex-row items-center px-5 pb-2">
-            {/* Left: name + room + tablet count */}
-            <View className="flex-1 mr-4">
-              <Text className="text-2xl font-bold text-white mb-1" numberOfLines={1}>
-                {patient.name}
+              <Text
+                style={{
+                  position: 'absolute',
+                  alignSelf: 'center',
+                  fontSize: 18,
+                  lineHeight: 24,
+                  fontWeight: '500',
+                  color: '#2F2E2D',
+                }}
+              >
+                Patients Detail
               </Text>
-              <View className="flex-row items-center mb-2">
-                <Ionicons name="grid-outline" size={13} color="rgba(255,255,255,0.85)" />
-                <Text className="text-sm text-white/85 ml-1">
-                  Room {patient.room_number ?? 'N/A'}
-                  {age !== null ? `  •  Age ${age}` : ''}
-                </Text>
-              </View>
-              <View className="flex-row items-center">
-                <Ionicons name="medkit-outline" size={13} color="rgba(255,255,255,0.85)" />
-                <Text className="text-sm text-white/85 ml-1">
-                  {statDose} tablets
-                </Text>
-              </View>
             </View>
 
-            {/* Avatar */}
             <View
-              className="w-20 h-20 rounded-full bg-white items-center justify-center"
-              style={{ shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 4 }}
+              style={{
+                marginTop: 22,
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+              }}
             >
-              <Ionicons name="person" size={40} color="#E8A050" />
+              <View style={{ flex: 1, paddingRight: 14 }}>
+                <Text
+                  style={{
+                    fontSize: 18,
+                    lineHeight: 24,
+                    fontWeight: '700',
+                    color: '#2F2E2D',
+                  }}
+                  numberOfLines={2}
+                >
+                  {patientName}
+                </Text>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                  <Ionicons name="cube-outline" size={15} color="#2F2E2D" />
+                  <Text style={{ marginLeft: 7, fontSize: 13, lineHeight: 18, color: '#2F2E2D' }}>
+                    Room {roomNumber}
+                    {age !== null ? ` • Age ${age}` : ''}
+                  </Text>
+                </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                  <Ionicons name="medkit-outline" size={15} color="#2F2E2D" />
+                  <Text style={{ marginLeft: 7, fontSize: 13, lineHeight: 18, color: '#2F2E2D' }}>
+                    {heroMedicationCount} tablets
+                  </Text>
+                </View>
+              </View>
+
+              <Avatar photoUrl={photoUrl} name={patientName} />
             </View>
           </View>
         </SafeAreaView>
       </LinearGradient>
 
-      {/* ── Stats card overlapping header ── */}
       <View
-        className="bg-white rounded-2xl mx-4 shadow-sm"
-        style={{ marginTop: -36, shadowColor: '#000', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 2 }, shadowRadius: 10, elevation: 3 }}
+        style={{
+          marginTop: -94,
+          marginHorizontal: 18,
+          borderRadius: 28,
+          backgroundColor: '#FFFFFF',
+          paddingHorizontal: 14,
+          paddingVertical: 18,
+          shadowColor: '#D5C5AF',
+          shadowOpacity: 0.34,
+          shadowOffset: { width: 0, height: 20 },
+          shadowRadius: 28,
+          elevation: 7,
+        }}
       >
-        <View className="flex-row py-4">
-          {/* Type */}
-          <View className="flex-1 items-center">
-            <Text className="text-2xl font-bold text-gray-900">{statType}</Text>
-            <Text className="text-xs text-gray-400 mt-0.5">Type</Text>
-          </View>
-          {/* Divider */}
-          <View className="w-px bg-gray-100 my-2" />
-          {/* Dose/Day */}
-          <View className="flex-1 items-center">
-            <Text className="text-2xl font-bold text-gray-900">{statDose}</Text>
-            <Text className="text-xs text-gray-400 mt-0.5">Dose/Day</Text>
-          </View>
-          {/* Divider */}
-          <View className="w-px bg-gray-100 my-2" />
-          {/* End Date */}
-          <View className="flex-1 items-center">
-            <Text className="text-2xl font-bold text-gray-900">{statEndDate}</Text>
-            <Text className="text-xs text-gray-400 mt-0.5">End Date</Text>
-          </View>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'stretch',
+            minHeight: 116,
+            borderRadius: 22,
+            backgroundColor: '#FBFBFB',
+          }}
+        >
+          <StatBlock value={statType} label="Type" />
+          <View style={{ width: 1, backgroundColor: '#ECE9E3', marginVertical: 18 }} />
+          <StatBlock value={statDosePerDay} label="Dose/Day" />
+          <View style={{ width: 1, backgroundColor: '#ECE9E3', marginVertical: 18 }} />
+          <StatBlock value={statEndDate} label="End Date" />
         </View>
       </View>
 
-      {/* ── Tab bar ── */}
-      <View className="flex-row mx-4 mt-4 mb-2">
-        {TABS.map((tab) => {
-          const isActive = activeTab === tab.key
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
-              className="flex-1 flex-row items-center justify-center min-h-[48px] pb-2"
-              style={isActive ? { borderBottomWidth: 2, borderBottomColor: '#E8721A' } : { borderBottomWidth: 2, borderBottomColor: 'transparent' }}
-            >
-              <Ionicons
-                name={tab.icon}
-                size={16}
-                color={isActive ? '#E8721A' : '#9CA3AF'}
-                style={{ marginRight: 4 }}
-              />
-              <Text
-                className={`text-sm font-semibold ${isActive ? 'text-[#E8721A]' : 'text-gray-400'}`}
-                numberOfLines={1}
+      <View style={{ paddingHorizontal: 18, marginTop: 20 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {detailTabs.map((tab) => {
+            const isActive = activeTab === tab.key
+
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                onPress={() => setActiveTab(tab.key)}
+                style={{
+                  flex: 1,
+                  minHeight: 54,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderBottomWidth: 3,
+                  borderBottomColor: isActive ? '#F1A34A' : 'transparent',
+                  flexDirection: 'row',
+                  gap: 8,
+                }}
               >
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          )
-        })}
+                <Ionicons
+                  name={tab.icon}
+                  size={22}
+                  color={isActive ? '#F1A34A' : '#2F2E2D'}
+                />
+                <Text
+                  style={{
+                    fontSize: 16,
+                    lineHeight: 22,
+                    fontWeight: isActive ? '700' : '500',
+                    color: isActive ? '#F1A34A' : '#2F2E2D',
+                  }}
+                  numberOfLines={1}
+                >
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
       </View>
 
-      {/* ── Scrollable content ── */}
       <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingTop: 8, paddingBottom: 100 }}
+        style={{ flex: 1, marginTop: 8 }}
+        contentContainerStyle={{
+          paddingHorizontal: 18,
+          paddingTop: 12,
+          paddingBottom: activeTab === 'medications' ? 144 : 40,
+          gap: 16,
+        }}
         showsVerticalScrollIndicator={false}
       >
-        {activeTab === 'medications' ? (
-          displayMeds.length === 0 ? (
-            <View className="mx-4 bg-white rounded-2xl items-center py-12 shadow-sm">
-              <Text className="text-4xl mb-3">💊</Text>
-              <Text className="text-base font-bold text-gray-800">No medications today</Text>
-              <Text className="text-sm text-gray-400 mt-1">No scheduled medications found</Text>
-            </View>
-          ) : (
-            displayMeds.map((med) => (
-              <MedCard key={med.prescription_id} med={med} />
-            ))
-          )
-        ) : (
-          <View className="mx-4 bg-white rounded-2xl items-center py-12 shadow-sm">
-            <Text className="text-4xl mb-4">🗂️</Text>
-            <Text className="text-base font-bold text-gray-800">
-              {activeTab === 'appointments' ? 'Appointments' : 'Device Info'}
-            </Text>
-            <Text className="text-sm text-gray-400 mt-1">Coming soon</Text>
-          </View>
-        )}
+        {activeTab === 'medications' && displayMedications.length === 0 ? (
+          <ScreenEmptyState
+            icon="medkit-outline"
+            title="No medication records"
+            body="Add medication to this patient or wait for the daily schedule to sync."
+          />
+        ) : null}
+
+        {activeTab === 'medications' && displayMedications.map((medication) => (
+          <MedicationCard key={medication.id} medication={medication} />
+        ))}
+
+        {activeTab === 'appointments' && appointments.map((item) => (
+          <DetailInfoCard key={item.id} item={item} />
+        ))}
+
+        {activeTab === 'device' && devices.map((item) => (
+          <DetailInfoCard key={item.id} item={item} />
+        ))}
       </ScrollView>
 
-      {/* ── Add Medication button ── */}
-      <View className="absolute bottom-0 left-0 right-0 px-4 pb-8 pt-3 bg-[#F5F0E8]">
-        <TouchableOpacity
-          className="bg-[#E8721A] rounded-full min-h-[52px] items-center justify-center w-full"
-          activeOpacity={0.85}
+      {activeTab === 'medications' ? (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            paddingHorizontal: 18,
+            paddingTop: 12,
+            paddingBottom: 24,
+            backgroundColor: '#F7F2EA',
+          }}
         >
-          <Text className="text-white font-bold text-base">+ Add Medication</Text>
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            onPress={() => {
+              if (!patientId) return
+              router.push({
+                pathname: '/add-medication',
+                params: {
+                  patientId,
+                  patientName,
+                },
+              })
+            }}
+            style={{
+              minHeight: 58,
+              borderRadius: 999,
+              backgroundColor: '#F6AA4D',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#D59B4A',
+              shadowOpacity: 0.32,
+              shadowOffset: { width: 0, height: 12 },
+              shadowRadius: 18,
+              elevation: 5,
+            }}
+          >
+            <Text style={{ fontSize: 18, lineHeight: 24, fontWeight: '500', color: '#2F2E2D' }}>
+              + Add Medication
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </View>
   )
 }

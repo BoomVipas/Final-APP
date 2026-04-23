@@ -12,7 +12,7 @@ type IoniconsName = React.ComponentProps<typeof Ionicons>['name']
 
 function createTabIcon(name: IoniconsName) {
   return function TabIcon({ color, size }: { color: string; size: number }) {
-    return <Ionicons name={name} size={size} color={color} />
+    return <Ionicons name={name} size={Math.min(size, 22)} color={color} />
   }
 }
 
@@ -33,14 +33,17 @@ export default function TabsLayout() {
           backgroundColor: '#FFF9F2',
           borderTopColor: '#EADBCB',
           borderTopWidth: 1,
-          height: 76,
-          paddingBottom: 12,
-          paddingTop: 8,
+          height: 58,
+          paddingBottom: 2,
+          paddingTop: 2,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 9,
           fontWeight: '500',
           textTransform: 'none',
+        },
+        tabBarItemStyle: {
+          paddingVertical: 0,
         },
       }}
     >

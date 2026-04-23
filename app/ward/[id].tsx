@@ -1,11 +1,6 @@
-/**
- * app/ward/[id].tsx
- * Ward detail screen — two internal tabs: Patients and Dispense.
- * Standalone stack screen (no bottom nav rendered here).
- */
-
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  ActivityIndicator,
   ScrollView,
   Text,
   TextInput,
@@ -13,421 +8,933 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useRouter, useLocalSearchParams } from 'expo-router'
-import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
-
-// ---------------------------------------------------------------------------
-// Inline mock data
-// ---------------------------------------------------------------------------
-
-interface WardPatient {
-  id: string
-  name: string
-  room: string
-  age: number
-  tablets: number
-  status: Array<'urgent' | 'dispensed' | 'low_medication'>
-}
-
-interface DispensePatient {
-  id: string
-  name: string
-  room: string
-  tablets: number
-}
-
-const WARD_PATIENTS: WardPatient[] = [
-  { id: 'p1', name: 'Mrs. Somsri Phakrammongkol', room: 'A-101', age: 79, tablets: 9, status: ['urgent'] },
-  { id: 'p2', name: 'Mrs. Somchai Rungreang', room: 'A-102', age: 79, tablets: 12, status: ['urgent'] },
-  { id: 'p3', name: 'Mr. Mana Jai', room: 'B-203', age: 69, tablets: 5, status: ['dispensed'] },
-  { id: 'p4', name: 'Mrs. Dararat Prasartngam', room: 'B-204', age: 80, tablets: 11, status: ['urgent', 'low_medication'] },
-  { id: 'p5', name: 'Mrs. Kanya Singkow', room: 'B-205', age: 67, tablets: 12, status: ['urgent'] },
-]
-
-const DISPENSE_PATIENTS: DispensePatient[] = [
-  { id: 'p2', name: 'Mrs. Somchai Rungreang', room: 'B-203', tablets: 5 },
-  { id: 'p5', name: 'Mrs. Kanya Singkow', room: 'B-203', tablets: 5 },
-]
-
-const DISPENSED_COUNT = 14
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
+import { Ionicons } from '@expo/vector-icons'
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router'
+import { useAuthStore } from '../../src/stores/authStore'
+import { useMedicationStore, type ScheduleItem } from '../../src/stores/medicationStore'
+import { usePatientStore } from '../../src/stores/patientStore'
+import { USE_MOCK } from '../../src/mocks'
+import { supabase } from '../../src/lib/supabase'
+import type { DispenseItemsRow, DispenseSessionsRow, MealTime, PatientsRow } from '../../src/types/database'
+import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
 
 type TabType = 'patients' | 'dispense'
-type TimeSlot = 'morning' | 'noon' | 'evening' | 'night'
+type SortMode = 'name' | 'room' | 'urgency'
+type PatientBadge = 'urgent' | 'dispensed' | 'low_medication'
 
-function StatusBadge({ badge }: { badge: 'urgent' | 'dispensed' | 'low_medication' }) {
-  if (badge === 'urgent') {
-    return (
-      <View className="flex-row items-center bg-red-50 px-2 py-1 rounded-full mr-2 mb-1">
-        <View className="w-1.5 h-1.5 rounded-full bg-red-500 mr-1" />
-        <Text className="text-[11px] font-medium text-red-600">Urgent</Text>
-      </View>
-    )
+interface PatientMeta {
+  id: string
+  name: string
+  room: string | null
+  dateOfBirth: string | null
+}
+
+interface WardPatientCard {
+  id: string
+  name: string
+  room: string
+  age: number | null
+  tablets: number
+  badges: PatientBadge[]
+  isFallback?: boolean
+}
+
+interface DispenseCardData {
+  id: string
+  name: string
+  room: string
+  tablets: number
+  isFallback?: boolean
+}
+
+interface DispenseDataset {
+  pending: DispenseCardData[]
+  dispensed: DispenseCardData[]
+  dispensedCount: number
+  source: 'tables' | 'schedule' | 'demo'
+}
+
+const CARD_SHADOW = {
+  shadowColor: '#D5C3AF',
+  shadowOpacity: 0.28,
+  shadowOffset: { width: 0, height: 10 },
+  shadowRadius: 22,
+  elevation: 6,
+}
+
+const SLOT_META: Array<{ key: MealTime; label: string }> = [
+  { key: 'morning', label: 'Morning' },
+  { key: 'noon', label: 'Noon' },
+  { key: 'evening', label: 'Evening' },
+  { key: 'bedtime', label: 'Night' },
+]
+
+const SORT_META: SortMode[] = ['name', 'room', 'urgency']
+
+const DEMO_PATIENTS: WardPatientCard[] = [
+  { id: 'demo-p1', name: 'Mrs. Somsri Phakrammongkol', room: 'A-101', age: 79, tablets: 9, badges: ['urgent'], isFallback: true },
+  { id: 'demo-p2', name: 'Mrs. Somchai Rungreang', room: 'A-102', age: 79, tablets: 12, badges: ['urgent'], isFallback: true },
+  { id: 'demo-p3', name: 'Mr. Mana Jai', room: 'B-203', age: 69, tablets: 5, badges: ['dispensed'], isFallback: true },
+  { id: 'demo-p4', name: 'Mrs. Dararat Prasartngam', room: 'B-204', age: 80, tablets: 11, badges: ['urgent', 'low_medication'], isFallback: true },
+  { id: 'demo-p5', name: 'Mrs. Kanya Singkow', room: 'B-205', age: 67, tablets: 12, badges: ['urgent'], isFallback: true },
+]
+
+const DEMO_DISPENSE_PENDING: DispenseCardData[] = [
+  { id: 'demo-d1', name: 'Mrs. Somchai Rungreang', room: 'B-203', tablets: 5, isFallback: true },
+  { id: 'demo-d2', name: 'Mrs. Kanya Singkow', room: 'B-203', tablets: 5, isFallback: true },
+]
+
+const DEMO_DISPENSED: DispenseCardData[] = [
+  { id: 'demo-done-1', name: 'Mr. Mana Jai', room: 'B-203', tablets: 5, isFallback: true },
+  { id: 'demo-done-2', name: 'Mrs. Dararat Prasartngam', room: 'B-204', tablets: 11, isFallback: true },
+]
+
+function formatWardLabel(value: string | null | undefined): string {
+  if (!value) return 'Ward A'
+
+  const normalized = value.replace(/_/g, '-').trim()
+  const explicitLetter = normalized.match(/^ward-([a-z])$/i)
+  if (explicitLetter) return `Ward ${explicitLetter[1].toUpperCase()}`
+
+  const numeric = normalized.match(/(\d+)/)
+  if (numeric) {
+    return `Ward ${numeric[1]}`
   }
-  if (badge === 'dispensed') {
-    return (
-      <View className="flex-row items-center bg-green-50 px-2 py-1 rounded-full mr-2 mb-1">
-        <View className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1" />
-        <Text className="text-[11px] font-medium text-green-600">Dispensed</Text>
-      </View>
-    )
+
+  if (/^ward/i.test(normalized)) {
+    const suffix = normalized.replace(/^ward[-\s]*/i, '').trim()
+    return `Ward ${suffix || 'A'}`
   }
-  // low_medication
+
+  return `Ward ${normalized.toUpperCase()}`
+}
+
+function resolveWardId(routeWardId: string | undefined, userWardId: string | null | undefined): string {
+  if (!routeWardId) return userWardId ?? ''
+  if (/^ward-[a-z]$/i.test(routeWardId) && userWardId) return userWardId
+  return routeWardId
+}
+
+function normalizeMealTime(value: string | null | undefined): MealTime | null {
+  if (!value) return null
+  if (value === 'night') return 'bedtime'
+  if (value === 'morning' || value === 'noon' || value === 'evening' || value === 'bedtime') {
+    return value
+  }
+  return null
+}
+
+function getAge(dateOfBirth: string | null): number | null {
+  if (!dateOfBirth) return null
+  const dob = new Date(dateOfBirth)
+  if (Number.isNaN(dob.getTime())) return null
+
+  const now = new Date()
+  let age = now.getFullYear() - dob.getFullYear()
+  const monthDelta = now.getMonth() - dob.getMonth()
+  if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < dob.getDate())) age -= 1
+  return age
+}
+
+function roomSortValue(room: string): string {
+  return room.replace(/[^A-Za-z0-9]/g, '').toLowerCase()
+}
+
+function badgePriority(card: WardPatientCard): number {
+  if (card.badges.includes('urgent')) return 0
+  if (card.badges.includes('low_medication')) return 1
+  if (card.badges.includes('dispensed')) return 2
+  return 3
+}
+
+function createDispenseRows(
+  quantities: Map<string, number>,
+  patientMetaById: Map<string, PatientMeta>,
+): DispenseCardData[] {
+  return [...quantities.entries()]
+    .map(([patientId, tablets]) => {
+      const meta = patientMetaById.get(patientId)
+      return {
+        id: patientId,
+        name: meta?.name ?? 'Unknown Patient',
+        room: meta?.room ?? 'Room -',
+        tablets,
+      }
+    })
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+function EmptyCard({ icon, title, subtitle }: { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string }) {
   return (
-    <View className="flex-row items-center bg-orange-50 px-2 py-1 rounded-full mr-2 mb-1">
-      <Ionicons name="warning-outline" size={11} color="#E8721A" />
-      <Text className="text-[11px] font-medium text-[#E8721A] ml-0.5">Low Medication</Text>
+    <View
+      className="bg-white rounded-[28px] mx-5 px-6 py-10 items-center"
+      style={CARD_SHADOW}
+    >
+      <View className="w-16 h-16 rounded-full bg-[#FFF5EA] items-center justify-center mb-4">
+        <Ionicons name={icon} size={28} color="#EFA54F" />
+      </View>
+      <Text className="text-[20px] leading-[26px] font-semibold text-[#323232] text-center">{title}</Text>
+      <Text className="text-[14px] leading-[20px] text-[#8891A1] text-center mt-2">{subtitle}</Text>
     </View>
   )
 }
 
-function PatientCard({ patient, onPress }: { patient: WardPatient; onPress: () => void }) {
+function StatusBadge({ badge }: { badge: PatientBadge }) {
+  if (badge === 'urgent') {
+    return (
+      <View className="flex-row items-center bg-[#FDECED] px-3 py-1 rounded-full mr-2 mb-1.5">
+        <Ionicons name="alert-circle" size={12} color="#F26666" />
+        <Text className="text-[12px] leading-[16px] font-medium text-[#F26666] ml-1.5">Urgent</Text>
+      </View>
+    )
+  }
+
+  if (badge === 'dispensed') {
+    return (
+      <View className="flex-row items-center bg-[#DDFBF3] px-3 py-1 rounded-full mr-2 mb-1.5">
+        <Ionicons name="checkmark-circle" size={12} color="#24B88F" />
+        <Text className="text-[12px] leading-[16px] font-medium text-[#24B88F] ml-1.5">Dispensed</Text>
+      </View>
+    )
+  }
+
+  return (
+    <View className="flex-row items-center bg-[#FEF1E6] px-3 py-1 rounded-full mr-2 mb-1.5">
+      <Ionicons name="warning" size={12} color="#F2A14C" />
+      <Text className="text-[12px] leading-[16px] font-medium text-[#F2A14C] ml-1.5">Low Medication</Text>
+    </View>
+  )
+}
+
+function HeaderBackground() {
+  return (
+    <View className="absolute inset-0 overflow-hidden">
+      <LinearGradient
+        colors={['#FFF8EF', '#F7D8B4', '#F1B05C']}
+        start={{ x: 0.08, y: 0.04 }}
+        end={{ x: 0.85, y: 1 }}
+        className="absolute inset-0"
+      />
+      <View className="absolute inset-0 opacity-25">
+        <View className="absolute left-0 top-8 bottom-16 w-[90px] border-r border-[#E3B47E]" />
+        <View className="absolute right-0 top-16 bottom-16 w-[88px] border-l border-[#E3B47E]" />
+        <View className="absolute left-[88px] right-[88px] top-16 bottom-10 bg-white/45" />
+        <View className="absolute left-[130px] right-[130px] top-8 h-[2px] bg-white/65" />
+        <View className="absolute left-[130px] right-[130px] top-28 h-[2px] bg-white/55" />
+        <View className="absolute left-[130px] right-[130px] top-48 h-[2px] bg-white/45" />
+      </View>
+      <View className="absolute left-[-34px] top-10 w-24 h-44 rounded-full border border-[#EABF8E] opacity-45" />
+      <View className="absolute right-[-20px] top-[-10px] w-48 h-48 rounded-full border border-[#EAC596] opacity-40" />
+      <LinearGradient
+        colors={['rgba(245,240,232,0)', '#F7F2EA']}
+        start={{ x: 0.5, y: 0.25 }}
+        end={{ x: 0.5, y: 1 }}
+        className="absolute left-0 right-0 bottom-0 h-32"
+      />
+    </View>
+  )
+}
+
+function SummaryStat({ value, label, borderRight }: { value: number; label: string; borderRight?: boolean }) {
+  return (
+    <View className="flex-1 items-center justify-center py-4">
+      <Text className="text-[28px] leading-[34px] font-semibold text-[#373737]">{value}</Text>
+      <Text className="text-[12px] leading-[16px] text-[#7D8798] mt-1">{label}</Text>
+      {borderRight ? <View className="absolute right-0 top-4 bottom-4 w-px bg-[#ECEAE6]" /> : null}
+    </View>
+  )
+}
+
+function InternalTab({
+  active,
+  icon,
+  label,
+  onPress,
+}: {
+  active: boolean
+  icon: keyof typeof Ionicons.glyphMap
+  label: string
+  onPress: () => void
+}) {
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
-      className="bg-white rounded-2xl shadow-sm mb-3 px-4 py-4 flex-row items-center min-h-[80px]"
+      className="flex-1 items-center justify-center pb-2.5 pt-2.5"
+      style={active ? { borderBottomWidth: 2, borderBottomColor: '#EFA54F' } : { borderBottomWidth: 2, borderBottomColor: 'transparent' }}
     >
-      {/* Avatar */}
-      <View className="w-12 h-12 rounded-full bg-[#FFF2E1] items-center justify-center mr-3 flex-shrink-0">
-        <Ionicons name="person" size={22} color="#E8721A" />
-      </View>
-
-      {/* Info */}
-      <View className="flex-1 mr-2">
-        <Text className="text-[15px] font-bold text-[#343230] mb-1" numberOfLines={1}>
-          {patient.name}
+      <View className="flex-row items-center">
+        <Ionicons name={icon} size={20} color={active ? '#EFA54F' : '#2F2F2F'} />
+        <Text
+          className="text-[14px] leading-[20px] font-medium ml-2"
+          style={{ color: active ? '#EFA54F' : '#1F1F1F' }}
+        >
+          {label}
         </Text>
-        <View className="flex-row items-center mb-1.5">
-          <Ionicons name="cube-outline" size={13} color="#8A91A1" />
-          <Text className="text-[12px] text-[#7D8798] ml-1">
-            Room {patient.room} • Age {patient.age}
+      </View>
+    </TouchableOpacity>
+  )
+}
+
+function PatientRow({
+  card,
+  onPress,
+}: {
+  card: WardPatientCard
+  onPress: () => void
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.9}
+      className="bg-white rounded-[20px] mx-4 mb-3 px-4 py-4 flex-row items-start"
+      style={CARD_SHADOW}
+    >
+      <PatientAvatar name={card.name} size={48} className="mr-3 mt-0.5" />
+
+      <View className="flex-1 pr-2">
+        <Text className="text-[15px] leading-[21px] font-semibold text-[#373737]" numberOfLines={1}>
+          {card.name}
+        </Text>
+
+        <View className="flex-row items-center mt-1.5">
+          <Ionicons name="cube-outline" size={14} color="#8C93A4" />
+          <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1.5">
+            Room {card.room}
+            {card.age !== null ? ` • Age ${card.age}` : ''}
           </Text>
         </View>
-        <View className="flex-row items-center flex-wrap">
-          <View className="flex-row items-center mr-2 mb-1">
-            <Ionicons name="medical" size={12} color="#7D8798" />
-            <Text className="text-[12px] text-[#7D8798] ml-1">{patient.tablets} tablets</Text>
-          </View>
-          {patient.status.map((s) => (
-            <StatusBadge key={s} badge={s} />
-          ))}
+
+        <View className="flex-row items-center mt-1.5">
+          <Ionicons name="medical-outline" size={14} color="#8C93A4" />
+          <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1.5">{card.tablets} tablets</Text>
         </View>
+
+        {card.badges.length > 0 ? (
+          <View className="flex-row flex-wrap mt-2">
+            {card.badges.map((badge) => (
+              <StatusBadge key={badge} badge={badge} />
+            ))}
+          </View>
+        ) : null}
       </View>
 
-      {/* Menu button */}
-      <TouchableOpacity className="min-h-[48px] min-w-[36px] items-center justify-center">
-        <Ionicons name="ellipsis-vertical" size={18} color="#4C4845" />
+      <TouchableOpacity className="w-8 h-8 items-center justify-center mt-0.5">
+        <Ionicons name="ellipsis-vertical" size={18} color="#4A4A4A" />
       </TouchableOpacity>
     </TouchableOpacity>
   )
 }
 
-function DispenseCard({
-  patient,
+function TimeChip({
+  label,
+  active,
+  completed,
+  onPress,
+}: {
+  label: string
+  active: boolean
+  completed?: boolean
+  onPress: () => void
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      className="rounded-2xl px-4 py-2.5 mr-2.5 border flex-row items-center"
+      style={{
+        backgroundColor: active ? '#F6AB52' : completed ? '#E3FFF7' : '#FFFFFF',
+        borderColor: completed ? '#18C79A' : active ? '#F6AB52' : '#E4E2DE',
+      }}
+    >
+      {completed ? <Ionicons name="checkmark-circle" size={16} color="#18C79A" style={{ marginRight: 5 }} /> : null}
+      <Text
+        className="text-[14px] leading-[20px]"
+        style={{ color: active ? '#2A2A2A' : completed ? '#18B88E' : '#313131' }}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  )
+}
+
+function DispenseRow({
+  card,
   selected,
   onToggle,
 }: {
-  patient: DispensePatient
+  card: DispenseCardData
   selected: boolean
   onToggle: () => void
 }) {
   return (
     <TouchableOpacity
       onPress={onToggle}
-      activeOpacity={0.85}
-      className="bg-white rounded-2xl shadow-sm mb-3 px-4 py-4 flex-row items-center min-h-[72px]"
+      activeOpacity={0.9}
+      className="bg-white rounded-[20px] mx-4 mb-3 px-4 py-4 flex-row items-center"
+      style={CARD_SHADOW}
     >
-      {/* Radio */}
-      <TouchableOpacity
-        onPress={onToggle}
-        className="w-6 h-6 rounded-full border-2 border-[#C5BEB5] items-center justify-center mr-3 flex-shrink-0 min-h-[48px] min-w-[48px]"
+      <View
+        className="w-8 h-8 rounded-full border-2 mr-4 items-center justify-center"
+        style={{ borderColor: selected ? '#F1A44F' : '#DDDEDF' }}
       >
-        {selected && <View className="w-3 h-3 rounded-full bg-[#E8721A]" />}
-      </TouchableOpacity>
+        {selected ? <View className="w-4 h-4 rounded-full bg-[#F1A44F]" /> : null}
+      </View>
 
-      {/* Info */}
       <View className="flex-1">
-        <Text className="text-[15px] font-bold text-[#343230] mb-1" numberOfLines={1}>
-          {patient.name}
+        <Text className="text-[15px] leading-[21px] font-semibold text-[#373737]" numberOfLines={1}>
+          {card.name}
         </Text>
-        <View className="flex-row items-center">
-          <Ionicons name="cube-outline" size={13} color="#8A91A1" />
-          <Text className="text-[12px] text-[#7D8798] ml-1">Room {patient.room}</Text>
+        <View className="flex-row items-center mt-1.5">
+          <Ionicons name="cube-outline" size={14} color="#8C93A4" />
+          <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1.5">Room {card.room}</Text>
         </View>
       </View>
 
-      {/* Tablets */}
-      <View className="flex-row items-center">
-        <Ionicons name="medical" size={13} color="#E8721A" />
-        <Text className="text-[13px] font-semibold text-[#E8721A] ml-1">{patient.tablets} tablets</Text>
+      <View className="flex-row items-center ml-3">
+        <Ionicons name="medical-outline" size={16} color="#F1A44F" />
+        <Text className="text-[14px] leading-[20px] font-semibold text-[#F1A44F] ml-1.5">
+          {card.tablets} tablets
+        </Text>
       </View>
     </TouchableOpacity>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Main screen
-// ---------------------------------------------------------------------------
+function BottomNav({
+  onHome,
+  onWard,
+  onProfile,
+}: {
+  onHome: () => void
+  onWard: () => void
+  onProfile: () => void
+}) {
+  return (
+    <View className="bg-white border-t border-[#ECE5DB] px-8 pt-3 pb-5">
+      <View className="flex-row items-center justify-between">
+        <TouchableOpacity onPress={onHome} className="items-center min-w-[76px]">
+          <Ionicons name="home" size={30} color="#2F2F2F" />
+          <Text className="text-[11px] leading-[16px] text-[#2F2F2F] mt-1.5">Home</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={onWard} className="items-center min-w-[76px]">
+          <Ionicons name="bed" size={30} color="#F2A14C" />
+          <Text className="text-[11px] leading-[16px] font-semibold text-[#2F2F2F] mt-1.5">Ward</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={onProfile} className="items-center min-w-[76px]">
+          <Ionicons name="person" size={30} color="#2F2F2F" />
+          <Text className="text-[11px] leading-[16px] text-[#2F2F2F] mt-1.5">Profile</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View className="h-1.5 w-32 rounded-full bg-black self-center mt-4" />
+    </View>
+  )
+}
 
 export default function WardDetailScreen() {
   const router = useRouter()
   const { id } = useLocalSearchParams<{ id: string }>()
+  const { user } = useAuthStore()
+  const {
+    patients,
+    fetchPatients,
+    loading: patientLoading,
+  } = usePatientStore()
+  const {
+    scheduleGroups,
+    fetchSchedule,
+    loading: scheduleLoading,
+  } = useMedicationStore()
 
   const [activeTab, setActiveTab] = useState<TabType>('patients')
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeTimeSlot, setActiveTimeSlot] = useState<TimeSlot>('noon')
+  const [sortMode, setSortMode] = useState<SortMode>('urgency')
+  const [activeTimeSlot, setActiveTimeSlot] = useState<MealTime>('noon')
+  const [visiblePatients, setVisiblePatients] = useState(5)
   const [selectedPatients, setSelectedPatients] = useState<Set<string>>(new Set())
   const [dispensedExpanded, setDispensedExpanded] = useState(false)
+  const [dispenseSessions, setDispenseSessions] = useState<DispenseSessionsRow[]>([])
+  const [dispenseItems, setDispenseItems] = useState<DispenseItemsRow[]>([])
+  const [dispenseLoading, setDispenseLoading] = useState(false)
 
-  // Derive a human-readable ward label from the id
-  const wardLabel = (() => {
-    if (!id) return 'Ward A'
-    const upper = id.toString().toUpperCase()
-    if (upper.includes('WARD-')) return `Ward ${upper.replace('WARD-', '')}`
-    if (upper.startsWith('WARD')) return `Ward ${upper.slice(4)}`
-    return `Ward ${upper}`
-  })()
+  const routeWardId = typeof id === 'string' ? id : ''
+  const effectiveWardId = resolveWardId(routeWardId, user?.ward_id)
+  const wardLabel = formatWardLabel(routeWardId || effectiveWardId)
+  const today = new Date().toISOString().slice(0, 10)
 
-  const filteredPatients = WARD_PATIENTS.filter((p) =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  const fetchDispenseData = useCallback(async () => {
+    if (!effectiveWardId || USE_MOCK) return
+
+    setDispenseLoading(true)
+    try {
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('dispense_sessions')
+        .select('id, patient_id, initiated_by, ward_id, session_date, status, created_at, updated_at')
+        .eq('ward_id', effectiveWardId)
+        .like('session_date', `${today}%`)
+
+      if (sessionsError) throw sessionsError
+
+      const sessionIds = (sessions ?? []).map((session) => session.id)
+      if (sessionIds.length === 0) {
+        setDispenseSessions([])
+        setDispenseItems([])
+        setDispenseLoading(false)
+        return
+      }
+
+      const { data: items, error: itemsError } = await supabase
+        .from('dispense_items')
+        .select('id, session_id, patient_id, medicine_id, slot_index, meal_time, quantity, status, dispensed_at, error_message, created_at')
+        .in('session_id', sessionIds)
+
+      if (itemsError) throw itemsError
+
+      setDispenseSessions(sessions ?? [])
+      setDispenseItems(items ?? [])
+    } catch {
+      setDispenseSessions([])
+      setDispenseItems([])
+    } finally {
+      setDispenseLoading(false)
+    }
+  }, [effectiveWardId, today])
+
+  useEffect(() => {
+    if (!effectiveWardId || USE_MOCK) return
+
+    Promise.all([
+      fetchPatients(effectiveWardId),
+      fetchSchedule(effectiveWardId, today),
+      fetchDispenseData(),
+    ]).catch(() => {
+      // Leave route-local visual fallback active if any request fails.
+    })
+  }, [effectiveWardId, fetchDispenseData, fetchPatients, fetchSchedule, today])
+
+  useEffect(() => {
+    setVisiblePatients(5)
+  }, [searchQuery, sortMode, activeTab, routeWardId])
+
+  const allItems = useMemo(
+    () => scheduleGroups.flatMap((group) => group.items),
+    [scheduleGroups],
   )
 
-  const togglePatient = (patientId: string) => {
-    setSelectedPatients((prev) => {
-      const next = new Set(prev)
+  const patientMetaById = useMemo(() => {
+    const map = new Map<string, PatientMeta>()
+
+    patients.forEach((patient: PatientsRow) => {
+      if (effectiveWardId && patient.ward_id !== effectiveWardId) return
+      map.set(patient.id, {
+        id: patient.id,
+        name: patient.name,
+        room: patient.room_number,
+        dateOfBirth: patient.date_of_birth,
+      })
+    })
+
+    allItems.forEach((item) => {
+      if (map.has(item.patient_id)) return
+      map.set(item.patient_id, {
+        id: item.patient_id,
+        name: item.patient_name,
+        room: item.room_number,
+        dateOfBirth: null,
+      })
+    })
+
+    return map
+  }, [allItems, effectiveWardId, patients])
+
+  const focusItems = useMemo(
+    () => allItems.filter((item) => item.meal_time === activeTimeSlot),
+    [activeTimeSlot, allItems],
+  )
+
+  const livePatientCards = useMemo<WardPatientCard[]>(() => {
+    const cards: WardPatientCard[] = []
+
+    patientMetaById.forEach((meta) => {
+      const patientFocusItems = focusItems.filter((item) => item.patient_id === meta.id)
+      const patientDailyItems = allItems.filter((item) => item.patient_id === meta.id)
+      const statusScope = patientFocusItems.length > 0 ? patientFocusItems : patientDailyItems
+      const quantityScope = patientFocusItems.length > 0 ? patientFocusItems : patientDailyItems
+      const badges: PatientBadge[] = []
+
+      if (statusScope.some((item) => item.status !== 'confirmed')) {
+        badges.push('urgent')
+      } else if (statusScope.length > 0) {
+        badges.push('dispensed')
+      }
+
+      cards.push({
+        id: meta.id,
+        name: meta.name,
+        room: meta.room ?? 'A-101',
+        age: getAge(meta.dateOfBirth),
+        tablets: quantityScope.reduce((sum, item) => sum + item.dose_quantity, 0),
+        badges,
+      })
+    })
+
+    return cards
+  }, [allItems, focusItems, patientMetaById])
+
+  const usingDemoPatients = livePatientCards.length === 0 && allItems.length === 0 && patients.length === 0
+  const patientCards = usingDemoPatients ? DEMO_PATIENTS : livePatientCards
+
+  const sortedFilteredPatients = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    const filtered = patientCards.filter((card) => {
+      if (!query) return true
+      return card.name.toLowerCase().includes(query) || card.room.toLowerCase().includes(query)
+    })
+
+    return [...filtered].sort((left, right) => {
+      if (sortMode === 'room') {
+        return roomSortValue(left.room).localeCompare(roomSortValue(right.room))
+      }
+
+      if (sortMode === 'urgency') {
+        const priorityDelta = badgePriority(left) - badgePriority(right)
+        if (priorityDelta !== 0) return priorityDelta
+        return left.name.localeCompare(right.name)
+      }
+
+      return left.name.localeCompare(right.name)
+    })
+  }, [patientCards, searchQuery, sortMode])
+
+  const visiblePatientCards = sortedFilteredPatients.slice(0, visiblePatients)
+  const canSeeMore = visiblePatients < sortedFilteredPatients.length
+
+  const slotPatientIds = new Set(focusItems.map((item) => item.patient_id))
+  const successfulPatientIds = new Set(
+    [...slotPatientIds].filter((patientId) => {
+      const itemsForPatient = focusItems.filter((item) => item.patient_id === patientId)
+      return itemsForPatient.length > 0 && itemsForPatient.every((item) => item.status === 'confirmed')
+    }),
+  )
+
+  const liveStatPatients = patientMetaById.size
+  const usingDemoStats = liveStatPatients === 0 && focusItems.length === 0
+  const statPatients = usingDemoStats ? 16 : liveStatPatients
+  const statSuccessful = usingDemoStats ? 12 : successfulPatientIds.size
+  const statPending = usingDemoStats ? 4 : Math.max(statPatients - statSuccessful, 0)
+
+  const tableDispense = useMemo<DispenseDataset>(() => {
+    if (dispenseSessions.length === 0 || dispenseItems.length === 0) {
+      return { pending: [], dispensed: [], dispensedCount: 0, source: 'tables' }
+    }
+
+    const sessionIds = new Set(dispenseSessions.map((session) => session.id))
+    const pending = new Map<string, number>()
+    const dispensed = new Map<string, number>()
+
+    dispenseItems.forEach((item) => {
+      if (!sessionIds.has(item.session_id)) return
+      const mealTime = normalizeMealTime(item.meal_time)
+      if (mealTime !== activeTimeSlot) return
+
+      if (item.status === 'dispensed') {
+        dispensed.set(item.patient_id, (dispensed.get(item.patient_id) ?? 0) + item.quantity)
+      } else {
+        pending.set(item.patient_id, (pending.get(item.patient_id) ?? 0) + item.quantity)
+      }
+    })
+
+    return {
+      pending: createDispenseRows(pending, patientMetaById),
+      dispensed: createDispenseRows(dispensed, patientMetaById),
+      dispensedCount: dispensed.size,
+      source: 'tables',
+    }
+  }, [activeTimeSlot, dispenseItems, dispenseSessions, patientMetaById])
+
+  const scheduleDispense = useMemo<DispenseDataset>(() => {
+    const pending = new Map<string, number>()
+    const dispensed = new Map<string, number>()
+
+    focusItems.forEach((item: ScheduleItem) => {
+      if (item.status === 'confirmed') {
+        dispensed.set(item.patient_id, (dispensed.get(item.patient_id) ?? 0) + item.dose_quantity)
+      } else {
+        pending.set(item.patient_id, (pending.get(item.patient_id) ?? 0) + item.dose_quantity)
+      }
+    })
+
+    return {
+      pending: createDispenseRows(pending, patientMetaById),
+      dispensed: createDispenseRows(dispensed, patientMetaById),
+      dispensedCount: dispensed.size,
+      source: 'schedule',
+    }
+  }, [focusItems, patientMetaById])
+
+  const activeDispense = useMemo<DispenseDataset>(() => {
+    if (tableDispense.pending.length > 0 || tableDispense.dispensed.length > 0) return tableDispense
+    if (scheduleDispense.pending.length > 0 || scheduleDispense.dispensed.length > 0) return scheduleDispense
+    return {
+      pending: DEMO_DISPENSE_PENDING,
+      dispensed: DEMO_DISPENSED,
+      dispensedCount: 14,
+      source: 'demo',
+    }
+  }, [scheduleDispense, tableDispense])
+
+  useEffect(() => {
+    setSelectedPatients((previous) => {
+      const allowedIds = new Set(activeDispense.pending.map((patient) => patient.id))
+      const next = new Set([...previous].filter((patientId) => allowedIds.has(patientId)))
+      return next
+    })
+  }, [activeDispense.pending, activeTimeSlot])
+
+  const initialLoading = !USE_MOCK
+    && patientLoading
+    && scheduleLoading
+    && dispenseLoading
+    && patients.length === 0
+    && allItems.length === 0
+
+  if (initialLoading) {
+    return (
+      <SafeAreaView className="flex-1 bg-[#F7F2EA] items-center justify-center">
+        <Stack.Screen options={{ headerShown: false }} />
+        <ActivityIndicator size="large" color="#F1A44F" />
+      </SafeAreaView>
+    )
+  }
+
+  const handleToggleSelectedPatient = (patientId: string) => {
+    setSelectedPatients((previous) => {
+      const next = new Set(previous)
       if (next.has(patientId)) next.delete(patientId)
       else next.add(patientId)
       return next
     })
   }
 
-  const timeSlots: { key: TimeSlot; label: string }[] = [
-    { key: 'morning', label: 'Morning' },
-    { key: 'noon', label: 'Noon' },
-    { key: 'evening', label: 'Evening' },
-    { key: 'night', label: 'Night' },
-  ]
+  const handleCycleSort = () => {
+    const currentIndex = SORT_META.indexOf(sortMode)
+    const nextMode = SORT_META[(currentIndex + 1) % SORT_META.length]
+    setSortMode(nextMode)
+  }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#F5F0E8]" edges={['top', 'left', 'right']}>
-      {/* ------------------------------------------------------------------ */}
-      {/* HEADER — gradient + back + ward name                                */}
-      {/* ------------------------------------------------------------------ */}
-      <LinearGradient
-        colors={['#F2C98A', '#EEA96A']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        className="px-4 pt-2 pb-14 relative overflow-hidden"
-      >
-        {/* decorative circles */}
-        <View className="absolute right-[-20px] top-0 w-44 h-44 rounded-full bg-[#F9D9B0] opacity-60" />
-        <View className="absolute right-8 top-6 w-28 h-28 rounded-full bg-[#FFE6C8] opacity-60" />
+    <View className="flex-1 bg-[#F7F2EA]">
+      <Stack.Screen options={{ headerShown: false }} />
 
-        {/* Back button */}
-        <TouchableOpacity
-          onPress={() => router.back()}
-          className="mt-2 mb-4 min-h-[48px] min-w-[48px] items-center justify-center self-start"
-        >
-          <Ionicons name="chevron-back" size={26} color="#2D2B29" />
-        </TouchableOpacity>
+      <SafeAreaView className="flex-1 bg-[#F7F2EA]" edges={['top', 'left', 'right']}>
+        <View className="flex-1">
+          <View className="relative h-[220px]">
+            <HeaderBackground />
 
-        {/* Ward name */}
-        <Text className="text-[32px] font-bold text-[#2D2B29] leading-[36px]">{wardLabel}</Text>
-        <View className="flex-row items-center mt-1">
-          <Ionicons name="layers-outline" size={14} color="#5C5A57" />
-          <Text className="text-[13px] text-[#5C5A57] ml-1.5">Building 1, Floor 2 – Somying</Text>
-        </View>
-      </LinearGradient>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* STATS CARD — overlaps header                                        */}
-      {/* ------------------------------------------------------------------ */}
-      <View className="mx-4 -mt-6 bg-white rounded-2xl shadow-sm px-4 py-3 flex-row z-10">
-        <View className="flex-1 items-center">
-          <Text className="text-[20px] font-bold text-[#343230]">16</Text>
-          <Text className="text-[11px] text-[#7D8798] mt-0.5">Patients</Text>
-        </View>
-        <View className="w-px bg-[#ECE4DA] mx-2" />
-        <View className="flex-1 items-center">
-          <Text className="text-[20px] font-bold text-[#343230]">12</Text>
-          <Text className="text-[11px] text-[#7D8798] mt-0.5">Successfully</Text>
-        </View>
-        <View className="w-px bg-[#ECE4DA] mx-2" />
-        <View className="flex-1 items-center">
-          <Text className="text-[20px] font-bold text-[#343230]">4</Text>
-          <Text className="text-[11px] text-[#7D8798] mt-0.5">Pending</Text>
-        </View>
-      </View>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* TAB SWITCHER                                                        */}
-      {/* ------------------------------------------------------------------ */}
-      <View className="flex-row mx-4 mt-4 mb-2">
-        <TouchableOpacity
-          onPress={() => setActiveTab('patients')}
-          className={`flex-1 flex-row items-center justify-center py-3 border-b-2 min-h-[48px] ${
-            activeTab === 'patients' ? 'border-[#E8721A]' : 'border-transparent'
-          }`}
-        >
-          <Ionicons
-            name="person-outline"
-            size={17}
-            color={activeTab === 'patients' ? '#E8721A' : '#8A91A1'}
-          />
-          <Text
-            className={`ml-1.5 text-[15px] font-semibold ${
-              activeTab === 'patients' ? 'text-[#E8721A]' : 'text-[#8A91A1]'
-            }`}
-          >
-            Patients
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={() => setActiveTab('dispense')}
-          className={`flex-1 flex-row items-center justify-center py-3 border-b-2 min-h-[48px] ${
-            activeTab === 'dispense' ? 'border-[#E8721A]' : 'border-transparent'
-          }`}
-        >
-          <Ionicons
-            name="medical-outline"
-            size={17}
-            color={activeTab === 'dispense' ? '#E8721A' : '#8A91A1'}
-          />
-          <Text
-            className={`ml-1.5 text-[15px] font-semibold ${
-              activeTab === 'dispense' ? 'text-[#E8721A]' : 'text-[#8A91A1]'
-            }`}
-          >
-            Dispense
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* CONTENT — scrollable per-tab                                        */}
-      {/* ------------------------------------------------------------------ */}
-      {activeTab === 'patients' ? (
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Search row */}
-          <View className="flex-row items-center mb-4 mt-2">
-            <View className="flex-1 flex-row items-center bg-white rounded-full px-4 py-3 shadow-sm mr-3 min-h-[48px]">
-              <Ionicons name="search-outline" size={18} color="#8A91A1" />
-              <TextInput
-                className="flex-1 ml-2 text-[14px] text-[#343230]"
-                placeholder="Search Patient Name"
-                placeholderTextColor="#B0B8C5"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-            </View>
-            <TouchableOpacity className="w-12 h-12 bg-white rounded-full items-center justify-center shadow-sm min-h-[48px] min-w-[48px]">
-              <Ionicons name="swap-vertical-outline" size={20} color="#4C4845" />
+            <TouchableOpacity
+              onPress={() => router.back()}
+              className="absolute left-5 top-5 w-10 h-10 items-center justify-center"
+            >
+              <Ionicons name="chevron-back" size={26} color="#313131" />
             </TouchableOpacity>
+
+            <View className="absolute left-6 right-6 bottom-[58px]">
+              <Text className="text-[30px] leading-[36px] font-bold text-[#303030]">
+                {wardLabel}
+              </Text>
+              <View className="flex-row items-center mt-2">
+                <Ionicons name="layers-outline" size={16} color="#424242" />
+                <Text className="text-[13px] leading-[18px] text-[#404040] ml-2">
+                  Building 1, Floor 2 - Somying
+                </Text>
+              </View>
+            </View>
+
+            <View className="absolute left-4 right-4 bottom-[-40px] bg-white rounded-[24px] border border-[#ECE5DB]" style={CARD_SHADOW}>
+              <View className="flex-row">
+                <SummaryStat value={statPatients} label="Patients" borderRight />
+                <SummaryStat value={statSuccessful} label="Successfully" borderRight />
+                <SummaryStat value={statPending} label="Pending" />
+              </View>
+            </View>
           </View>
 
-          {/* Patient cards */}
-          {filteredPatients.map((patient) => (
-            <PatientCard
-              key={patient.id}
-              patient={patient}
-              onPress={() => router.push(`/patient/${patient.id}`)}
+          <View className="flex-row mt-[52px] bg-white/50">
+            <InternalTab
+              active={activeTab === 'patients'}
+              icon="person-add-outline"
+              label="Patients"
+              onPress={() => setActiveTab('patients')}
             />
-          ))}
+            <InternalTab
+              active={activeTab === 'dispense'}
+              icon="medical-outline"
+              label="Dispense"
+              onPress={() => setActiveTab('dispense')}
+            />
+          </View>
 
-          {/* See More */}
-          <TouchableOpacity className="items-center py-4 min-h-[48px]">
-            <Text className="text-[14px] text-[#8A91A1] font-medium">+ See More</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      ) : (
-        <View className="flex-1">
-          <ScrollView
-            className="flex-1"
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Time filter chips */}
+          {activeTab === 'patients' ? (
             <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              className="mt-2 mb-4"
-              contentContainerStyle={{ paddingVertical: 4 }}
+              className="flex-1"
+              contentContainerStyle={{ paddingTop: 14, paddingBottom: 36 }}
+              showsVerticalScrollIndicator={false}
             >
-              {timeSlots.map(({ key, label }) => {
-                const isActive = activeTimeSlot === key
-                const isMorning = key === 'morning'
-                return (
-                  <TouchableOpacity
-                    key={key}
-                    onPress={() => setActiveTimeSlot(key)}
-                    className={`flex-row items-center mr-2 px-4 py-2 rounded-full min-h-[40px] border ${
-                      isMorning
-                        ? 'border-[#3DB9AB] bg-white'
-                        : isActive
-                        ? 'border-[#E8721A] bg-[#E8721A]'
-                        : 'border-[#D9D4CE] bg-white'
-                    }`}
-                  >
-                    {isMorning && (
-                      <Ionicons name="checkmark-circle" size={15} color="#3DB9AB" style={{ marginRight: 4 }} />
-                    )}
-                    <Text
-                      className={`text-[13px] font-medium ${
-                        isMorning
-                          ? 'text-[#3DB9AB]'
-                          : isActive
-                          ? 'text-white'
-                          : 'text-[#8A91A1]'
-                      }`}
-                    >
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                )
-              })}
+              <View className="bg-white border-t border-[#EAE6E0] border-b border-[#EAE6E0] px-4 py-3 flex-row items-center mb-4">
+                <View className="flex-1 rounded-[16px] border border-[#E2E0DB] bg-[#FAFAFA] px-3 py-2.5 flex-row items-center mr-3">
+                  <Ionicons name="search-outline" size={18} color="#343434" />
+                  <TextInput
+                    className="flex-1 ml-2.5 text-[14px] leading-[20px] text-[#2E2E2E]"
+                    placeholder="Search Patient Name"
+                    placeholderTextColor="#8B94A4"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  onPress={handleCycleSort}
+                  className="w-11 h-11 rounded-full border border-[#E2E0DB] bg-white items-center justify-center"
+                >
+                  <Ionicons name="swap-vertical" size={20} color="#343434" />
+                </TouchableOpacity>
+              </View>
+
+              {visiblePatientCards.length > 0 ? (
+                visiblePatientCards.map((card) => (
+                  <PatientRow
+                    key={card.id}
+                    card={card}
+                    onPress={() => {
+                      if (!card.isFallback) router.push(`/patient/${card.id}`)
+                    }}
+                  />
+                ))
+              ) : (
+                <EmptyCard
+                  icon="search"
+                  title="No matching patients"
+                  subtitle="Try a different name or room number."
+                />
+              )}
+
+              {sortedFilteredPatients.length > 5 ? (
+                <TouchableOpacity
+                  onPress={() => setVisiblePatients((current) => (canSeeMore ? current + 5 : 5))}
+                  className="items-center justify-center py-4"
+                >
+                  <Text className="text-[14px] leading-[20px] text-[#2F2F2F]">
+                    {canSeeMore ? '+ See More' : 'Show Less'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </ScrollView>
+          ) : (
+            <View className="flex-1">
+              <ScrollView
+                className="flex-1"
+                contentContainerStyle={{ paddingTop: 12, paddingBottom: 36 }}
+                showsVerticalScrollIndicator={false}
+              >
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  className="mb-6"
+                  contentContainerStyle={{ paddingHorizontal: 20 }}
+                >
+                  {SLOT_META.map((slot) => {
+                    const isActive = activeTimeSlot === slot.key
+                    const completed = !isActive && activeDispense.source !== 'demo' && activeDispense.dispensedCount > 0 && slot.key === 'morning'
+                    return (
+                      <TimeChip
+                        key={slot.key}
+                        label={slot.label}
+                        active={isActive}
+                        completed={completed}
+                        onPress={() => setActiveTimeSlot(slot.key)}
+                      />
+                    )
+                  })}
+                </ScrollView>
 
-            {/* Dispense patient list */}
-            {DISPENSE_PATIENTS.map((patient) => (
-              <DispenseCard
-                key={patient.id}
-                patient={patient}
-                selected={selectedPatients.has(patient.id)}
-                onToggle={() => togglePatient(patient.id)}
-              />
-            ))}
-          </ScrollView>
+                {activeDispense.pending.length > 0 ? (
+                  activeDispense.pending.map((card) => (
+                    <DispenseRow
+                      key={card.id}
+                      card={card}
+                      selected={selectedPatients.has(card.id)}
+                      onToggle={() => handleToggleSelectedPatient(card.id)}
+                    />
+                  ))
+                ) : (
+                  <EmptyCard
+                    icon="checkmark-done-circle"
+                    title="Nothing left to dispense"
+                    subtitle="All queued patients for this time slot are already dispensed."
+                  />
+                )}
+              </ScrollView>
 
-          {/* "N People Paid" expandable section — pinned at bottom */}
-          <TouchableOpacity
-            onPress={() => setDispensedExpanded((v) => !v)}
-            activeOpacity={0.85}
-            className="absolute bottom-0 left-0 right-0 mx-4 mb-4 bg-[#E8F7F5] rounded-2xl px-4 py-4 flex-row items-center min-h-[60px] shadow-sm"
-          >
-            <View className="w-9 h-9 rounded-full bg-[#3DB9AB] items-center justify-center mr-3">
-              <Ionicons name="checkmark" size={18} color="white" />
+              <View className="px-5 pb-5">
+                <TouchableOpacity
+                  onPress={() => setDispensedExpanded((current) => !current)}
+                  activeOpacity={0.9}
+                  className="bg-[#DDFBF3] rounded-[24px] px-6 py-5"
+                  style={CARD_SHADOW}
+                >
+                  <View className="flex-row items-center">
+                    <View className="w-8 h-8 rounded-full bg-[#18C79A] items-center justify-center mr-4">
+                      <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                    </View>
+                    <Text className="flex-1 text-[18px] leading-[24px] font-semibold text-[#16B88D]">
+                      {activeDispense.dispensedCount} People Paid
+                    </Text>
+                    <View className="w-14 h-14 rounded-full bg-white items-center justify-center">
+                      <Ionicons
+                        name={dispensedExpanded ? 'chevron-up' : 'chevron-down'}
+                        size={24}
+                        color="#363636"
+                      />
+                    </View>
+                  </View>
+
+                  {dispensedExpanded ? (
+                    <View className="mt-5 pt-4 border-t border-[#CBEDE3]">
+                      {activeDispense.dispensed.length > 0 ? (
+                        activeDispense.dispensed.map((patient) => (
+                          <View key={patient.id} className="flex-row items-center justify-between py-2">
+                            <View className="flex-row items-center flex-1 pr-4">
+                              <Ionicons name="person-circle-outline" size={24} color="#179D7D" />
+                              <Text className="text-[15px] leading-[20px] text-[#2F2F2F] ml-3" numberOfLines={1}>
+                                {patient.name}
+                              </Text>
+                            </View>
+                            <Text className="text-[14px] leading-[20px] text-[#6B7280]">Room {patient.room}</Text>
+                          </View>
+                        ))
+                      ) : (
+                        <Text className="text-[14px] leading-[20px] text-[#6B7280]">
+                          No completed dispenses recorded for this time slot yet.
+                        </Text>
+                      )}
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+              </View>
             </View>
-            <Text className="flex-1 text-[15px] font-semibold text-[#2D7A72]">
-              {DISPENSED_COUNT} People Paid
-            </Text>
-            <Ionicons
-              name={dispensedExpanded ? 'chevron-up' : 'chevron-down'}
-              size={20}
-              color="#2D7A72"
-            />
-          </TouchableOpacity>
+          )}
         </View>
-      )}
-    </SafeAreaView>
+
+        <BottomNav
+          onHome={() => router.replace('/(tabs)')}
+          onWard={() => router.replace('/(tabs)/patients')}
+          onProfile={() => router.replace('/(tabs)/settings')}
+        />
+      </SafeAreaView>
+    </View>
   )
 }
