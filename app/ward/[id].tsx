@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Image,
+  ImageBackground,
   Alert,
   Modal,
   Pressable,
@@ -21,6 +23,17 @@ import { USE_MOCK } from '../../src/mocks'
 import { supabase } from '../../src/lib/supabase'
 import type { DispenseItemsRow, DispenseSessionsRow, MealTime, PatientsRow } from '../../src/types/database'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
+import HeroSectionImg from '../../icons/HeroSection.png'
+import FrameIcon from '../../icons/Frame.png'
+import DocumentIcon from '../../icons/Document.png'
+import DispenseIcon from '../../icons/Dispense.png'
+import HealthIcon from '../../icons/Health.png'
+import UnionIcon from '../../icons/Union.png'
+import HomeIcon from '../../icons/Home.png'
+import WardIcon from '../../icons/Ward.png'
+import MedicineIcon from '../../icons/Medicine.png'
+import MealFrameIcon from '../../icons/MealFrame.png'
+import TickIcon from '../../icons/Tick.png'
 import {
   getMachineStatus,
   runDispenseSequence,
@@ -275,7 +288,17 @@ function InternalTab({
       style={active ? { borderBottomWidth: 2, borderBottomColor: '#EFA54F' } : { borderBottomWidth: 2, borderBottomColor: 'transparent' }}
     >
       <View className="flex-row items-center">
-        <Ionicons name={icon} size={20} color={active ? '#EFA54F' : '#2F2F2F'} />
+        {label === 'Patients' ? (
+          <Image
+            source={DocumentIcon}
+            style={{ width: 20, height: 20, tintColor: active ? '#EFA54F' : '#2F2F2F' }}
+          />
+        ) : (
+          <Image
+            source={DispenseIcon}
+            style={{ width: 20, height: 20, tintColor: active ? '#EFA54F' : '#2F2F2F' }}
+          />
+        )}
         <Text
           className="text-[14px] leading-[20px] font-medium ml-2"
           style={{ color: active ? '#EFA54F' : '#1F1F1F' }}
@@ -309,7 +332,10 @@ function PatientRow({
         </Text>
 
         <View className="flex-row items-center mt-1.5">
-          <Ionicons name="cube-outline" size={14} color="#8C93A4" />
+          <Image
+            source={UnionIcon}
+            style={{ width: 14, height: 14, tintColor: '#8C93A4' }}
+          />
           <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1.5">
             Room {card.room}
             {card.age !== null ? ` • Age ${card.age}` : ''}
@@ -317,7 +343,10 @@ function PatientRow({
         </View>
 
         <View className="flex-row items-center mt-1.5">
-          <Ionicons name="medical-outline" size={14} color="#8C93A4" />
+          <Image
+          source={HealthIcon}
+          style={{ width: 14, height: 14, tintColor: '#8C93A4' }}
+        />
           <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1.5">{card.tablets} tablets</Text>
         </View>
 
@@ -352,19 +381,44 @@ function TimeChip({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
-      className="rounded-2xl px-4 py-2.5 mr-2.5 border flex-row items-center"
       style={{
-        backgroundColor: active ? '#F6AB52' : completed ? '#E3FFF7' : '#FFFFFF',
-        borderColor: completed ? '#18C79A' : active ? '#F6AB52' : '#E4E2DE',
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        marginRight: 10,
+        overflow: 'hidden',
       }}
     >
-      {completed ? <Ionicons name="checkmark-circle" size={16} color="#18C79A" style={{ marginRight: 5 }} /> : null}
-      <Text
-        className="text-[14px] leading-[20px]"
-        style={{ color: active ? '#2A2A2A' : completed ? '#18B88E' : '#313131' }}
-      >
-        {label}
-      </Text>
+      {completed ? (
+        <ImageBackground
+          source={MealFrameIcon}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          imageStyle={{ resizeMode: 'stretch' }}
+        />
+      ) : (
+        <View
+          style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: active ? '#F6AB52' : '#FFFFFF',
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: active ? '#F6AB52' : '#E4E2DE',
+          }}
+        />
+      )}
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        {completed ? (
+          <Image source={TickIcon} style={{ width: 16, height: 16, marginRight: 5 }} />
+        ) : null}
+        <Text
+          style={{
+            fontSize: 14,
+            color: active ? '#2A2A2A' : completed ? '#18B88E' : '#313131',
+          }}
+        >
+          {label}
+        </Text>
+      </View>
     </TouchableOpacity>
   )
 }
@@ -403,7 +457,10 @@ function DispenseRow({
       </View>
 
       <View className="flex-row items-center ml-3">
-        <Ionicons name="medical-outline" size={16} color="#F1A44F" />
+        <Image
+          source={MedicineIcon}
+          style={{ width: 16, height: 16, tintColor: '#F1A44F' }}
+        />
         <Text className="text-[14px] leading-[20px] font-semibold text-[#F1A44F] ml-1.5">
           {card.tablets} tablets
         </Text>
@@ -425,12 +482,15 @@ function BottomNav({
     <View className="bg-white border-t border-[#ECE5DB] px-8 pt-3 pb-5">
       <View className="flex-row items-center justify-between">
         <TouchableOpacity onPress={onHome} className="items-center min-w-[76px]">
-          <Ionicons name="home" size={30} color="#2F2F2F" />
+          <Image
+            source={HomeIcon}
+            style={{ width: 30, height: 30, tintColor: '#2F2F2F' }}
+          />
           <Text className="text-[11px] leading-[16px] text-[#2F2F2F] mt-1.5">Home</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={onWard} className="items-center min-w-[76px]">
-          <Ionicons name="bed" size={30} color="#F2A14C" />
+          <Image source={WardIcon} style={{ width: 30, height: 30, tintColor: '#F2A14C' }} />
           <Text className="text-[11px] leading-[16px] font-semibold text-[#2F2F2F] mt-1.5">Ward</Text>
         </TouchableOpacity>
 
@@ -1090,7 +1150,11 @@ export default function WardDetailScreen() {
       <SafeAreaView className="flex-1 bg-[#F7F2EA]" edges={['top', 'left', 'right']}>
         <View className="flex-1">
           <View className="relative h-[220px]">
-            <HeaderBackground />
+            <Image
+              source={HeroSectionImg}
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
+              resizeMode="cover"
+            />
 
             <TouchableOpacity
               onPress={() => router.back()}
@@ -1111,13 +1175,18 @@ export default function WardDetailScreen() {
               </View>
             </View>
 
-            <View className="absolute left-4 right-4 bottom-[-40px] bg-white rounded-[24px] border border-[#ECE5DB]" style={CARD_SHADOW}>
+            <ImageBackground
+              source={FrameIcon}
+              style={{ position: 'absolute', left: 16, right: 16, bottom: -40 }}
+              imageStyle={{ borderRadius: 24, width: '100%', height: '100%' }}
+              resizeMode="stretch"
+            >
               <View className="flex-row">
                 <SummaryStat value={statPatients} label="Patients" borderRight />
                 <SummaryStat value={statSuccessful} label="Successfully" borderRight />
                 <SummaryStat value={statPending} label="Pending" />
               </View>
-            </View>
+            </ImageBackground>
           </View>
 
           <View className="flex-row mt-[52px] bg-white/50">
@@ -1205,7 +1274,10 @@ export default function WardDetailScreen() {
                 >
                   {SLOT_META.map((slot) => {
                     const isActive = activeTimeSlot === slot.key
-                    const completed = !isActive && activeDispense.source !== 'demo' && activeDispense.dispensedCount > 0 && slot.key === 'morning'
+                    const completed = !isActive && activeDispense.source !== 'demo' && (() => {
+                      const slotItems = allItems.filter((item) => item.meal_time === slot.key)
+                      return slotItems.length > 0 && slotItems.every((item) => item.status === 'confirmed')
+                    })()
                     return (
                       <TimeChip
                         key={slot.key}

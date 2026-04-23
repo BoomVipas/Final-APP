@@ -6,6 +6,8 @@
 import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
+  Image,
+  ImageBackground,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -22,6 +24,15 @@ import { USE_MOCK, MOCK_PRESCRIPTIONS, mockSelectPatient } from '../../src/mocks
 import { supabase } from '../../src/lib/supabase'
 import type { MealTime } from '../../src/types/database'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
+import FrameIcon from '../../icons/Frame.png'
+import ProfileBoyIcon from '../../icons/Profileboy.png'
+import HomeIcon from '../../icons/Home.png'
+import WardIcon from '../../icons/Ward.png'
+import ProfileIcon from '../../icons/Profile.png'
+import MedicineIcon from '../../icons/Medicine.png'
+import HealthIcon from '../../icons/Health.png'
+import AppointmentIcon from '../../icons/Appointment.png'
+import DetailsIcon from '../../icons/Details.png'
 
 type DetailTab = 'medications' | 'appointments' | 'device'
 type WarningTone = 'critical' | 'warning' | null
@@ -518,7 +529,7 @@ function MedicationCard({ medication }: { medication: DisplayMedication }) {
           </Text>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-            <Ionicons name="medkit-outline" size={13} color="#7E8797" />
+            <Image source={HealthIcon} style={{ width: 13, height: 13, tintColor: '#7E8797' }} />
             <Text style={{ marginLeft: 5, fontSize: 13, lineHeight: 18, color: '#727C8F' }}>
               {getMedicationLabel(medication.doseQuantity, medication.dosageForm)}
             </Text>
@@ -912,11 +923,11 @@ export default function PatientDetailScreen() {
   const detailTabs: Array<{
     key: DetailTab
     label: string
-    icon: keyof typeof Ionicons.glyphMap
+    icon: any
   }> = [
-    { key: 'medications', label: 'Medication', icon: 'medkit-outline' },
-    { key: 'appointments', label: 'Appointments', icon: 'people-outline' },
-    { key: 'device', label: 'Device', icon: 'pulse-outline' },
+    { key: 'medications', label: 'Medication', icon: MedicineIcon },
+    { key: 'appointments', label: 'Appointments', icon: AppointmentIcon },
+    { key: 'device', label: 'Device', icon: DetailsIcon },
   ]
 
   const appointments = DEFAULT_APPOINTMENTS.map((item, index) => ({
@@ -1045,50 +1056,45 @@ export default function PatientDetailScreen() {
                 </View>
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                  <Ionicons name="medkit-outline" size={15} color="#2F2E2D" />
+                  <Image source={HealthIcon} style={{ width: 15, height: 15, tintColor: '#2F2E2D' }} />
                   <Text style={{ marginLeft: 7, fontSize: 13, lineHeight: 18, color: '#2F2E2D' }}>
                     {heroMedicationCount} tablets
                   </Text>
                 </View>
               </View>
 
-              <Avatar photoUrl={photoUrl} name={patientName} />
+              <Image
+                source={ProfileBoyIcon}
+                style={{
+                  width: 92,
+                  height: 92,
+                  borderRadius: 46,
+                  borderWidth: 3,
+                  borderColor: '#FFFFFF',
+                }}
+              />
             </View>
           </View>
         </SafeAreaView>
       </LinearGradient>
 
-      <View
+      <ImageBackground
+        source={FrameIcon}
         style={{
-          marginTop: -94,
-          marginHorizontal: 18,
-          borderRadius: 28,
-          backgroundColor: '#FFFFFF',
-          paddingHorizontal: 14,
-          paddingVertical: 18,
-          shadowColor: '#D5C5AF',
-          shadowOpacity: 0.34,
-          shadowOffset: { width: 0, height: 20 },
-          shadowRadius: 28,
-          elevation: 7,
+          marginTop: -74,
+          marginHorizontal: 50,
+          height: 116,
         }}
+        imageStyle={{ borderRadius: 28, resizeMode: 'stretch' }}
       >
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'stretch',
-            minHeight: 116,
-            borderRadius: 22,
-            backgroundColor: '#FBFBFB',
-          }}
-        >
+        <View style={{ flexDirection: 'row', alignItems: 'stretch', flex: 1 }}>
           <StatBlock value={statType} label="Type" />
           <View style={{ width: 1, backgroundColor: '#ECE9E3', marginVertical: 18 }} />
           <StatBlock value={statDosePerDay} label="Dose/Day" />
           <View style={{ width: 1, backgroundColor: '#ECE9E3', marginVertical: 18 }} />
           <StatBlock value={statEndDate} label="End Date" />
         </View>
-      </View>
+      </ImageBackground>
 
       <View style={{ paddingHorizontal: 18, marginTop: 20 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -1110,10 +1116,9 @@ export default function PatientDetailScreen() {
                   gap: 8,
                 }}
               >
-                <Ionicons
-                  name={tab.icon}
-                  size={22}
-                  color={isActive ? '#F1A34A' : '#2F2E2D'}
+                <Image
+                  source={tab.icon}
+                  style={{ width: 22, height: 22, tintColor: isActive ? '#F1A34A' : '#2F2E2D' }}
                 />
                 <Text
                   style={{
@@ -1169,10 +1174,10 @@ export default function PatientDetailScreen() {
             position: 'absolute',
             left: 0,
             right: 0,
-            bottom: 0,
+            bottom: 96,
             paddingHorizontal: 18,
             paddingTop: 12,
-            paddingBottom: 24,
+            paddingBottom: 12,
             backgroundColor: '#F7F2EA',
           }}
         >
@@ -1206,6 +1211,26 @@ export default function PatientDetailScreen() {
           </TouchableOpacity>
         </View>
       ) : null}
+
+      <View style={{ backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#ECE5DB', paddingHorizontal: 32, paddingTop: 12, paddingBottom: 20 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={{ alignItems: 'center', minWidth: 76 }}>
+            <Image source={HomeIcon} style={{ width: 30, height: 30, tintColor: '#2F2F2F' }} />
+            <Text style={{ fontSize: 11, color: '#2F2F2F', marginTop: 6 }}>Home</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => router.replace('/(tabs)/patients')} style={{ alignItems: 'center', minWidth: 76 }}>
+            <Image source={WardIcon} style={{ width: 30, height: 30, tintColor: '#2F2F2F' }} />
+            <Text style={{ fontSize: 11, fontWeight: '600', color: '#2F2F2F', marginTop: 6 }}>Ward</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => router.replace('/(tabs)/settings')} style={{ alignItems: 'center', minWidth: 76 }}>
+            <Image source={ProfileIcon} style={{ width: 30, height: 30, tintColor: '#2F2F2F' }} />
+            <Text style={{ fontSize: 11, color: '#2F2F2F', marginTop: 6 }}>Profile</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={{ height: 6, width: 128, borderRadius: 999, backgroundColor: '#000000', alignSelf: 'center', marginTop: 16 }} />
+      </View>
     </View>
   )
 }
