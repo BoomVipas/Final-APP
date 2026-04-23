@@ -1,6 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
   ScrollView,
   Text,
   TextInput,
@@ -18,6 +21,13 @@ import { USE_MOCK } from '../../src/mocks'
 import { supabase } from '../../src/lib/supabase'
 import type { DispenseItemsRow, DispenseSessionsRow, MealTime, PatientsRow } from '../../src/types/database'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
+import {
+  getMachineStatus,
+  runDispenseSequence,
+  emergencyStop,
+  type MachineStatus,
+  type DispenseProgressEvent,
+} from '../../src/lib/moonraker'
 
 type TabType = 'patients' | 'dispense'
 type SortMode = 'name' | 'room' | 'urgency'
@@ -435,6 +445,213 @@ function BottomNav({
   )
 }
 
+// ─── Dispense flow modal ─────────────────────────────────────────────────────
+
+type DispenseModalPhase = 'confirm' | 'running' | 'done' | 'error'
+
+interface DispenseJob {
+  patientId: string
+  patientName: string
+  room: string
+  cabinet: number
+  tablets: number
+}
+
+function DispenseModal({
+  visible,
+  jobs,
+  timeLabel,
+  onClose,
+  onConfirm,
+}: {
+  visible: boolean
+  jobs: DispenseJob[]
+  timeLabel: string
+  onClose: () => void
+  onConfirm: () => Promise<void>
+}) {
+  const [phase, setPhase]       = useState<DispenseModalPhase>('confirm')
+  const [events, setEvents]     = useState<DispenseProgressEvent[]>([])
+  const [errorMsg, setErrorMsg] = useState('')
+  const scrollRef               = useRef<ScrollView>(null)
+
+  useEffect(() => {
+    if (visible) { setPhase('confirm'); setEvents([]); setErrorMsg('') }
+  }, [visible])
+
+  const handleStart = async () => {
+    setPhase('running')
+    setEvents([])
+    try {
+      await onConfirm()
+      setPhase('done')
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Dispense failed')
+      setPhase('error')
+    }
+  }
+
+  const totalTablets = jobs.reduce((s, j) => s + j.tablets, 0)
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable className="flex-1 bg-black/50" onPress={phase === 'confirm' ? onClose : undefined}>
+        <View className="flex-1" />
+        <Pressable onPress={() => {}} className="bg-[#FFF9F2] rounded-t-[32px] px-5 pt-6 pb-8" style={{ maxHeight: '85%' }}>
+
+          {/* ── Confirm phase ─────────────────────────────── */}
+          {phase === 'confirm' && (
+            <>
+              <View className="flex-row items-center justify-between mb-5">
+                <View>
+                  <Text className="text-xs font-semibold uppercase tracking-widest text-[#8E4B14]">PILLo Dispenser</Text>
+                  <Text className="text-xl font-bold text-[#2E241B] mt-0.5">Confirm Dispense</Text>
+                </View>
+                <TouchableOpacity onPress={onClose} className="w-9 h-9 rounded-full bg-[#F0E8DE] items-center justify-center">
+                  <Ionicons name="close" size={18} color="#5E5145" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Summary */}
+              <View className="flex-row gap-3 mb-5">
+                <View className="flex-1 bg-[#F6EBDD] rounded-2xl px-3 py-3 items-center">
+                  <Text className="text-xl font-bold text-[#2E241B]">{jobs.length}</Text>
+                  <Text className="text-xs text-[#7D6E60] mt-0.5">Patients</Text>
+                </View>
+                <View className="flex-1 bg-[#F6EBDD] rounded-2xl px-3 py-3 items-center">
+                  <Text className="text-xl font-bold text-[#2E241B]">{totalTablets}</Text>
+                  <Text className="text-xs text-[#7D6E60] mt-0.5">Total doses</Text>
+                </View>
+                <View className="flex-1 bg-[#F6EBDD] rounded-2xl px-3 py-3 items-center">
+                  <Text className="text-xl font-bold text-[#2E241B]">{timeLabel}</Text>
+                  <Text className="text-xs text-[#7D6E60] mt-0.5">Time slot</Text>
+                </View>
+              </View>
+
+              {/* Patient list */}
+              <ScrollView style={{ maxHeight: 200 }} showsVerticalScrollIndicator={false} className="mb-5">
+                {jobs.map((job, i) => (
+                  <View key={job.patientId} className="flex-row items-center py-2.5 border-b border-[#F0E8DE]">
+                    <View className="w-7 h-7 rounded-full bg-[#F6EBDD] items-center justify-center mr-3">
+                      <Text className="text-xs font-bold text-[#8E4B14]">{i + 1}</Text>
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-sm font-semibold text-[#2E241B]">{job.patientName}</Text>
+                      <Text className="text-xs text-[#7D6E60]">Room {job.room} · Slot {job.cabinet}</Text>
+                    </View>
+                    <View className="flex-row items-center">
+                      <Ionicons name="medical-outline" size={14} color="#C96B1A" />
+                      <Text className="text-sm font-semibold text-[#C96B1A] ml-1">{job.tablets}</Text>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+
+              <View className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 mb-5 flex-row items-start">
+                <Text className="text-base mr-2">⚠️</Text>
+                <Text className="text-xs text-amber-700 flex-1">
+                  Ensure the collection tray is in place and patients are ready before starting.
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={handleStart}
+                className="bg-[#C96B1A] rounded-2xl py-4 items-center"
+              >
+                <Text className="text-white font-bold text-base">Start Dispensing</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onClose} className="items-center py-3 mt-1">
+                <Text className="text-sm text-[#7D6E60]">Cancel</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {/* ── Running phase ─────────────────────────────── */}
+          {phase === 'running' && (
+            <>
+              <View className="items-center mb-6">
+                <View className="w-16 h-16 rounded-[20px] bg-[#FFF0E0] items-center justify-center mb-4">
+                  <ActivityIndicator size="large" color="#C96B1A" />
+                </View>
+                <Text className="text-lg font-bold text-[#2E241B]">Dispensing in progress</Text>
+                <Text className="text-xs text-[#7D6E60] mt-1">Do not move the dispenser</Text>
+              </View>
+
+              {/* Progress bar */}
+              {events.length > 0 && (
+                <View className="bg-[#F0E8DE] rounded-full h-2 mb-5 overflow-hidden">
+                  <View
+                    className="bg-[#C96B1A] h-2 rounded-full"
+                    style={{ width: `${Math.min(100, (events.filter(e => e.type === 'delivering').length / jobs.length) * 100)}%` }}
+                  />
+                </View>
+              )}
+
+              {/* Live log */}
+              <ScrollView
+                ref={scrollRef}
+                style={{ maxHeight: 260 }}
+                showsVerticalScrollIndicator={false}
+                onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+              >
+                {events.map((ev, i) => (
+                  <View key={i} className="flex-row items-start mb-2">
+                    <Text className="text-base mr-2 mt-0.5">
+                      {ev.type === 'homing'    ? '🔄'
+                      : ev.type === 'moving'   ? '➡️'
+                      : ev.type === 'picking'  ? '🤖'
+                      : ev.type === 'delivering' ? '✅'
+                      : ev.type === 'done'     ? '🎉'
+                      : '❌'}
+                    </Text>
+                    <Text className="text-sm text-[#2E241B] flex-1">{ev.message}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+
+              <TouchableOpacity
+                onPress={() => emergencyStop().then(() => setPhase('error')).catch(() => setPhase('error'))}
+                className="bg-red-500 rounded-2xl py-3 items-center mt-4"
+              >
+                <Text className="text-white font-bold text-sm">🛑 Emergency Stop</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {/* ── Done phase ────────────────────────────────── */}
+          {phase === 'done' && (
+            <View className="items-center py-6">
+              <Text className="text-5xl mb-4">✅</Text>
+              <Text className="text-xl font-bold text-[#2E241B] mb-1">All Done!</Text>
+              <Text className="text-sm text-[#7D6E60] text-center mb-6">
+                {jobs.length} patient{jobs.length !== 1 ? 's' : ''} dispensed ({totalTablets} doses)
+              </Text>
+              <TouchableOpacity onPress={onClose} className="bg-[#C96B1A] rounded-2xl px-10 py-3.5">
+                <Text className="text-white font-bold text-base">Done</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ── Error phase ───────────────────────────────── */}
+          {phase === 'error' && (
+            <View className="items-center py-6">
+              <Text className="text-5xl mb-4">❌</Text>
+              <Text className="text-xl font-bold text-[#2E241B] mb-2">Dispense Failed</Text>
+              <View className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-6 w-full">
+                <Text className="text-sm text-red-700 text-center">{errorMsg || 'An error occurred. Check the machine and try again.'}</Text>
+              </View>
+              <TouchableOpacity onPress={onClose} className="bg-[#C96B1A] rounded-2xl px-10 py-3.5">
+                <Text className="text-white font-bold text-base">Close</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+        </Pressable>
+      </Pressable>
+    </Modal>
+  )
+}
+
 export default function WardDetailScreen() {
   const router = useRouter()
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -460,6 +677,13 @@ export default function WardDetailScreen() {
   const [dispenseSessions, setDispenseSessions] = useState<DispenseSessionsRow[]>([])
   const [dispenseItems, setDispenseItems] = useState<DispenseItemsRow[]>([])
   const [dispenseLoading, setDispenseLoading] = useState(false)
+
+  // Dispense machine state
+  const [machineStatus, setMachineStatus]   = useState<MachineStatus | null>(null)
+  const [checkingMachine, setCheckingMachine] = useState(false)
+  const [showDispenseModal, setShowDispenseModal] = useState(false)
+  const [dispenseJobs, setDispenseJobs]     = useState<DispenseJob[]>([])
+  const dispenseEventsRef = useRef<DispenseProgressEvent[]>([])
 
   const routeWardId = typeof id === 'string' ? id : ''
   const effectiveWardId = resolveWardId(routeWardId, user?.ward_id)
@@ -726,6 +950,139 @@ export default function WardDetailScreen() {
     setSortMode(nextMode)
   }
 
+  // ── Dispense trigger flow ──────────────────────────────────────────────────
+
+  const checkMachineAndOpen = async () => {
+    if (selectedPatients.size === 0) {
+      Alert.alert('No patients selected', 'Select at least one patient before dispensing.')
+      return
+    }
+
+    setCheckingMachine(true)
+    const status = await getMachineStatus()
+    setMachineStatus(status)
+    setCheckingMachine(false)
+
+    if (status.state !== 'ready') {
+      Alert.alert(
+        'Machine not ready',
+        `Status: ${status.state}\n${status.message}\n\nPlease check the dispenser before proceeding.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Proceed anyway', onPress: buildAndOpenModal },
+        ],
+      )
+      return
+    }
+    buildAndOpenModal()
+  }
+
+  const buildAndOpenModal = async () => {
+    // Look up cabinet_slots to find which physical slot holds each patient's medicine
+    const selectedIds = [...selectedPatients]
+    const pendingForSlot = activeDispense.pending.filter((c) => selectedIds.includes(c.id))
+
+    // Fetch patient prescriptions + cabinet slots for selected patients
+    const { data: prescriptions } = await supabase
+      .from('patient_prescriptions')
+      .select('patient_id, medicine_id, dose_quantity')
+      .in('patient_id', selectedIds)
+      .eq('is_active', true)
+      .contains('meal_times', [activeTimeSlot])
+
+    const medicineIds = [...new Set((prescriptions ?? []).map((p) => p.medicine_id))]
+
+    const { data: slots } = await supabase
+      .from('cabinet_slots')
+      .select('medicine_id, cabinet_position')
+      .in('medicine_id', medicineIds)
+
+    const slotByMedicine = new Map<string, number>()
+    for (const s of slots ?? []) {
+      if (s.medicine_id) slotByMedicine.set(s.medicine_id, s.cabinet_position)
+    }
+
+    // Build ordered job list — one job per patient (first medicine found)
+    const jobs: DispenseJob[] = pendingForSlot.map((card) => {
+      const rx = (prescriptions ?? []).find((p) => p.patient_id === card.id)
+      const cabinet = rx ? (slotByMedicine.get(rx.medicine_id) ?? 1) : 1
+      return {
+        patientId:   card.id,
+        patientName: card.name,
+        room:        card.room,
+        cabinet,
+        tablets:     rx?.dose_quantity ?? card.tablets,
+      }
+    })
+
+    setDispenseJobs(jobs)
+    dispenseEventsRef.current = []
+    setShowDispenseModal(true)
+  }
+
+  const runDispense = async () => {
+    const { data: session, error: sessionError } = await supabase
+      .from('dispense_sessions')
+      .insert({
+        patient_id:  dispenseJobs[0]?.patientId ?? '',
+        ward_id:     effectiveWardId,
+        initiated_by: user?.id ?? null,
+        session_date: new Date().toISOString(),
+        status:      'in_progress',
+      })
+      .select('id')
+      .single()
+
+    if (sessionError) throw sessionError
+
+    await runDispenseSequence(
+      dispenseJobs.map((j) => ({ cabinet: j.cabinet, patientName: j.patientName })),
+      (event) => {
+        dispenseEventsRef.current = [...dispenseEventsRef.current, event]
+        // Trigger re-render by updating a state value via the event stream
+        setDispenseJobs((prev) => [...prev])
+      },
+    )
+
+    // Log to medication_logs for each dispensed patient
+    const today = new Date().toISOString()
+    for (const job of dispenseJobs) {
+      const rx = await supabase
+        .from('patient_prescriptions')
+        .select('id, medicine_id')
+        .eq('patient_id', job.patientId)
+        .eq('is_active', true)
+        .contains('meal_times', [activeTimeSlot])
+        .limit(1)
+        .maybeSingle()
+
+      if (rx.data) {
+        await supabase.from('medication_logs').insert({
+          prescription_id: rx.data.id,
+          patient_id:      job.patientId,
+          medicine_id:     rx.data.medicine_id,
+          caregiver_id:    user?.id ?? '',
+          meal_time:       activeTimeSlot,
+          status:          'confirmed',
+          method:          'normal',
+          administered_at: today,
+        })
+      }
+    }
+
+    // Mark session complete
+    if (session?.id) {
+      await supabase
+        .from('dispense_sessions')
+        .update({ status: 'completed' })
+        .eq('id', session.id)
+    }
+
+    // Refresh data
+    setSelectedPatients(new Set())
+    await fetchDispenseData()
+  }
+
   return (
     <View className="flex-1 bg-[#F7F2EA]">
       <Stack.Screen options={{ headerShown: false }} />
@@ -879,51 +1236,89 @@ export default function WardDetailScreen() {
                 )}
               </ScrollView>
 
-              <View className="px-5 pb-5">
+              {/* ── Bottom action area ─────────────────────── */}
+              <View className="px-4 pb-4 gap-3">
+
+                {/* Machine status chip */}
+                {machineStatus && (
+                  <View className={`flex-row items-center px-4 py-2.5 rounded-2xl ${
+                    machineStatus.state === 'ready'
+                      ? 'bg-green-50 border border-green-100'
+                      : 'bg-red-50 border border-red-100'
+                  }`}>
+                    <View className={`w-2 h-2 rounded-full mr-2 ${
+                      machineStatus.state === 'ready' ? 'bg-green-500' : 'bg-red-500'
+                    }`} />
+                    <Text className={`text-xs font-semibold ${
+                      machineStatus.state === 'ready' ? 'text-green-700' : 'text-red-700'
+                    }`}>
+                      Machine: {machineStatus.state}
+                    </Text>
+                    {machineStatus.message ? (
+                      <Text className="text-xs text-gray-500 ml-2 flex-1" numberOfLines={1}>
+                        {machineStatus.message}
+                      </Text>
+                    ) : null}
+                  </View>
+                )}
+
+                {/* Dispensed summary collapsible */}
                 <TouchableOpacity
-                  onPress={() => setDispensedExpanded((current) => !current)}
+                  onPress={() => setDispensedExpanded((c) => !c)}
                   activeOpacity={0.9}
-                  className="bg-[#DDFBF3] rounded-[24px] px-6 py-5"
-                  style={CARD_SHADOW}
+                  className="bg-[#DDFBF3] rounded-[20px] px-4 py-3"
                 >
                   <View className="flex-row items-center">
-                    <View className="w-8 h-8 rounded-full bg-[#18C79A] items-center justify-center mr-4">
-                      <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                    <View className="w-7 h-7 rounded-full bg-[#18C79A] items-center justify-center mr-3">
+                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
                     </View>
-                    <Text className="flex-1 text-[18px] leading-[24px] font-semibold text-[#16B88D]">
-                      {activeDispense.dispensedCount} People Paid
+                    <Text className="flex-1 text-[15px] font-semibold text-[#16B88D]">
+                      {activeDispense.dispensedCount} dispensed this slot
                     </Text>
-                    <View className="w-14 h-14 rounded-full bg-white items-center justify-center">
-                      <Ionicons
-                        name={dispensedExpanded ? 'chevron-up' : 'chevron-down'}
-                        size={24}
-                        color="#363636"
-                      />
-                    </View>
+                    <Ionicons
+                      name={dispensedExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={18}
+                      color="#179D7D"
+                    />
                   </View>
-
-                  {dispensedExpanded ? (
-                    <View className="mt-5 pt-4 border-t border-[#CBEDE3]">
-                      {activeDispense.dispensed.length > 0 ? (
-                        activeDispense.dispensed.map((patient) => (
-                          <View key={patient.id} className="flex-row items-center justify-between py-2">
-                            <View className="flex-row items-center flex-1 pr-4">
-                              <Ionicons name="person-circle-outline" size={24} color="#179D7D" />
-                              <Text className="text-[15px] leading-[20px] text-[#2F2F2F] ml-3" numberOfLines={1}>
-                                {patient.name}
-                              </Text>
-                            </View>
-                            <Text className="text-[14px] leading-[20px] text-[#6B7280]">Room {patient.room}</Text>
-                          </View>
-                        ))
-                      ) : (
-                        <Text className="text-[14px] leading-[20px] text-[#6B7280]">
-                          No completed dispenses recorded for this time slot yet.
-                        </Text>
-                      )}
+                  {dispensedExpanded && activeDispense.dispensed.length > 0 && (
+                    <View className="mt-3 pt-3 border-t border-[#CBEDE3]">
+                      {activeDispense.dispensed.map((p) => (
+                        <View key={p.id} className="flex-row items-center py-1.5">
+                          <Ionicons name="person-circle-outline" size={18} color="#179D7D" />
+                          <Text className="text-sm text-[#2F2F2F] ml-2 flex-1" numberOfLines={1}>{p.name}</Text>
+                          <Text className="text-xs text-[#6B7280]">Room {p.room}</Text>
+                        </View>
+                      ))}
                     </View>
-                  ) : null}
+                  )}
                 </TouchableOpacity>
+
+                {/* Start dispense button */}
+                <TouchableOpacity
+                  onPress={checkMachineAndOpen}
+                  disabled={checkingMachine || selectedPatients.size === 0}
+                  activeOpacity={0.85}
+                  className={`rounded-[22px] py-4 items-center flex-row justify-center ${
+                    selectedPatients.size === 0
+                      ? 'bg-[#E8D5C4]'
+                      : 'bg-[#C96B1A]'
+                  }`}
+                >
+                  {checkingMachine ? (
+                    <ActivityIndicator color="white" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="flash" size={18} color="white" />
+                      <Text className="text-white font-bold text-base ml-2">
+                        {selectedPatients.size === 0
+                          ? 'Select patients to dispense'
+                          : `Dispense for ${selectedPatients.size} patient${selectedPatients.size !== 1 ? 's' : ''}`}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
               </View>
             </View>
           )}
@@ -933,6 +1328,17 @@ export default function WardDetailScreen() {
           onHome={() => router.replace('/(tabs)')}
           onWard={() => router.replace('/(tabs)/patients')}
           onProfile={() => router.replace('/(tabs)/settings')}
+        />
+
+        <DispenseModal
+          visible={showDispenseModal}
+          jobs={dispenseJobs}
+          timeLabel={SLOT_META.find((s) => s.key === activeTimeSlot)?.label ?? activeTimeSlot}
+          onClose={() => {
+            setShowDispenseModal(false)
+            fetchDispenseData()
+          }}
+          onConfirm={runDispense}
         />
       </SafeAreaView>
     </View>
