@@ -4,9 +4,10 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { Alert, Image, ImageBackground, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { Tabs, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import DoubleCheckIcon from '../../icons/DoubleCheckIcon'
 import ScanMedicationIcon from '../../icons/ScanMedicationIcon'
@@ -18,6 +19,10 @@ import { useMedicationStore } from '../../src/stores/medicationStore'
 import { useNotificationStore } from '../../src/stores/notificationStore'
 import { Card } from '../../src/components/ui/Card'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
+import HomeIcon from '../../icons/Home.png'
+import WardIcon from '../../icons/Ward.png'
+import ProfileIcon from '../../icons/Profile.png'
+import BackgroundImg from '../../icons/Background.png'
 
 interface AlertCardData {
   id: string
@@ -35,6 +40,7 @@ interface DispensePatientCard {
   name: string
   room: string
   age: string
+  wardId: string
   ward: string
   tablets: string
   statusLabel: string
@@ -84,31 +90,26 @@ function getFirstName(name: string | null | undefined): string {
 }
 
 function formatWardLabel(wardId: string | null | undefined): string {
-  if (!wardId) return 'Ward'
-  const normalized = wardId.trim().toLowerCase()
+  const value = wardId?.trim()
+  if (!value) return 'Ward'
+
+  const normalized = value.toLowerCase()
   if (normalized === 'ward-a' || normalized === 'a') return 'Ward A'
   if (normalized === 'ward-b' || normalized === 'b') return 'Ward B'
 
-  const digitMatch = normalized.match(/(\d+)/)
-  if (digitMatch) {
-    const index = Number(digitMatch[1])
-    if (index >= 1 && index <= 26) {
-      return `Ward ${String.fromCharCode(64 + index)}`
-    }
+  if (/^ward[-_\s]?/i.test(value)) {
+    return value.replace(/_/g, ' ').replace(/-/g, ' ')
   }
 
-  if (normalized.startsWith('ward')) return wardId.replace(/-/g, ' ')
-  return `Ward ${wardId}`
+  return `Ward ${value}`
 }
 
 function ActionItem({
   SvgIcon,
-  iconSize = 34,
   label,
   onPress,
 }: {
   SvgIcon: React.FC<{ width?: number; height?: number }>
-  iconSize?: number
   label: string
   onPress: () => void
 }) {
@@ -116,8 +117,8 @@ function ActionItem({
 
   return (
     <TouchableOpacity onPress={onPress} className="flex-1 items-center px-1">
-      <View className="w-[54px] h-[54px] rounded-[18px] bg-[#FFF5E8] items-center justify-center mb-2">
-        <SvgIcon width={iconSize} height={iconSize} />
+      <View className="w-[54px] h-[54px] rounded-[18px] bg-[#FFF5E8] overflow-hidden mb-2">
+        <SvgIcon width={54} height={54} />
       </View>
       {lines.map((line, i) => (
         <Text key={i} className="text-[11px] leading-[14px] font-semibold text-[#2E2C2A] text-center">
@@ -133,14 +134,49 @@ function StatCard({
   value,
   icon,
   tintClass,
+  gradient,
   onPress,
 }: {
   label: string
   value: number
   icon: React.ComponentProps<typeof Ionicons>['name']
   tintClass?: string
+  gradient?: boolean | string[]
   onPress: () => void
 }) {
+  const inner = (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.88}
+      style={{ flex: 1, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 16 }}
+    >
+      <View className="flex-row items-start justify-between">
+        <Text className="text-[13px] leading-[18px] text-[#3B3836] flex-1 pr-2">{label}</Text>
+        <View className="w-9 h-9 rounded-full bg-[#F5F5F5] items-center justify-center">
+          <Ionicons name={icon} size={18} color="#303030" />
+        </View>
+      </View>
+      <View className="flex-row items-end justify-between mt-3">
+        <Text className="text-[26px] font-bold text-[#303030]">{value}</Text>
+        <Ionicons name="chevron-forward" size={18} color="#454545" />
+      </View>
+    </TouchableOpacity>
+  )
+
+  if (gradient) {
+    const gradientColors = Array.isArray(gradient) ? gradient : ['#F1F1F1', '#FFFFFF']
+    return (
+      <LinearGradient
+        colors={gradientColors as [string, string]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={{ flex: 1, borderRadius: 18 }}
+      >
+        {inner}
+      </LinearGradient>
+    )
+  }
+
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -317,6 +353,28 @@ function PatientCard({
   )
 }
 
+function BottomNav({ onHome, onWard, onProfile }: { onHome: () => void; onWard: () => void; onProfile: () => void }) {
+  return (
+    <View style={{ backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#ECE5DB', paddingHorizontal: 32, paddingTop: 12, paddingBottom: 20 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <TouchableOpacity onPress={onHome} style={{ alignItems: 'center', minWidth: 76 }}>
+          <Image source={HomeIcon} style={{ width: 30, height: 30, tintColor: '#F2A14C' }} />
+          <Text style={{ fontSize: 11, fontWeight: '600', color: '#2F2F2F', marginTop: 6 }}>Home</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onWard} style={{ alignItems: 'center', minWidth: 76 }}>
+          <Image source={WardIcon} style={{ width: 30, height: 30, tintColor: '#2F2F2F' }} />
+          <Text style={{ fontSize: 11, color: '#2F2F2F', marginTop: 6 }}>Ward</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onProfile} style={{ alignItems: 'center', minWidth: 76 }}>
+          <Image source={ProfileIcon} style={{ width: 30, height: 30, tintColor: '#2F2F2F' }} />
+          <Text style={{ fontSize: 11, color: '#2F2F2F', marginTop: 6 }}>Profile</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={{ height: 6, width: 128, borderRadius: 999, alignSelf: 'center', marginTop: 16 }} />
+    </View>
+  )
+}
+
 export default function HomeScreen() {
   const router = useRouter()
   const { user } = useAuthStore()
@@ -325,23 +383,22 @@ export default function HomeScreen() {
   const { activeAlerts, fetchNotifications } = useNotificationStore()
   const [refreshing, setRefreshing] = useState(false)
   const [alertsExpanded, setAlertsExpanded] = useState(true)
-  const [selectedWardFilter, setSelectedWardFilter] = useState<'all' | 'ward-a' | 'ward-b'>('all')
+  const [selectedWardFilter, setSelectedWardFilter] = useState('all')
 
   const today = new Date()
   const todayStr = today.toISOString().slice(0, 10)
   const wardId = user?.ward_id ?? ''
 
   const allTodayItems = scheduleGroups.flatMap((group) => group.items)
-  const visualFallback = patients.length === 0 && allTodayItems.length === 0 && activeAlerts.length === 0
+  const visualFallback = !wardId && patients.length === 0 && allTodayItems.length === 0 && activeAlerts.length === 0
 
   const loadData = useCallback(async () => {
-    if (!wardId) return
     await Promise.all([
-      fetchPatients(wardId),
-      fetchSchedule(wardId, todayStr),
+      fetchPatients(''),
+      fetchSchedule('', todayStr),
       user ? fetchNotifications(user.id) : Promise.resolve(),
     ])
-  }, [fetchNotifications, fetchPatients, fetchSchedule, todayStr, user, wardId])
+  }, [fetchNotifications, fetchPatients, fetchSchedule, todayStr, user])
 
   useEffect(() => {
     loadData()
@@ -382,7 +439,8 @@ export default function HomeScreen() {
           name: patient.name,
           room: patient.room_number ? `Room ${patient.room_number}` : 'No room',
           age: getAge(patient.date_of_birth),
-          ward: formatWardLabel(wardId),
+          wardId: patient.ward_id,
+          ward: formatWardLabel(patient.ward_id),
           tablets: `${Math.max(patientItems.length, 1) * 4} tablets`,
           statusLabel: statusTone === 'urgent' ? 'Urgent' : statusTone === 'pending' ? 'Pending' : 'Dispensed',
           statusTone,
@@ -396,8 +454,7 @@ export default function HomeScreen() {
         const order = { urgent: 0, pending: 1, done: 2 }
         return order[a.statusTone] - order[b.statusTone]
       })
-      .slice(0, 3)
-  }, [allTodayItems, patients, wardId])
+  }, [allTodayItems, patients])
 
   const demoAlertCards: AlertCardData[] = [
     {
@@ -428,6 +485,7 @@ export default function HomeScreen() {
       name: 'Mr. Somchai Wongsri',
       room: 'Room A-102',
       age: '78',
+      wardId: 'ward-a',
       ward: 'Ward A',
       tablets: '12 tablets',
       statusLabel: 'Urgent',
@@ -440,6 +498,7 @@ export default function HomeScreen() {
       name: 'Mrs. Polo Suksan',
       room: 'Room B-201',
       age: '81',
+      wardId: 'ward-b',
       ward: 'Ward B',
       tablets: '9 tablets',
       statusLabel: 'Pending',
@@ -453,6 +512,7 @@ export default function HomeScreen() {
       name: 'Mr. Mana Jai',
       room: 'Room B-203',
       age: '69',
+      wardId: 'ward-b',
       ward: 'Ward B',
       tablets: '5 tablets',
       statusLabel: 'Dispensed',
@@ -463,17 +523,52 @@ export default function HomeScreen() {
 
   const alertCards = visualFallback ? demoAlertCards : liveAlertCards
   const patientCards = visualFallback ? demoPatientCards : livePatientCards
-  const filteredPatientCards = patientCards.filter((patient) => {
-    if (selectedWardFilter === 'all') return true
-    if (selectedWardFilter === 'ward-a') return patient.ward.toLowerCase().includes('ward a')
-    return patient.ward.toLowerCase().includes('ward b')
-  })
+  const wardFilterOptions = useMemo(() => {
+    const wardCounts = new Map<string, number>()
+    const wardLabels = new Map<string, string>()
+    const source = visualFallback
+      ? demoPatientCards.map((patient) => ({ wardId: patient.wardId, ward: patient.ward }))
+      : patients.map((patient) => ({ wardId: patient.ward_id, ward: formatWardLabel(patient.ward_id) }))
+
+    source.forEach(({ wardId, ward }) => {
+      if (!wardId) return
+      wardCounts.set(wardId, (wardCounts.get(wardId) ?? 0) + 1)
+      wardLabels.set(wardId, ward)
+    })
+
+    const wardOptions = [...wardCounts.entries()]
+      .map(([id, count]) => ({
+        id,
+        count,
+        label: wardLabels.get(id) ?? formatWardLabel(id),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+
+    return [
+      { id: 'all', label: 'All Wards', count: source.length },
+      ...wardOptions,
+    ]
+  }, [demoPatientCards, patients, visualFallback])
+
+  const filteredPatientCards = patientCards
+    .filter((patient) => {
+      if (selectedWardFilter === 'all') return true
+      return patient.wardId === selectedWardFilter
+    })
+    .slice(0, 3)
   const visibleAlertCards = alertsExpanded ? alertCards : []
   const totalRecipients = visualFallback ? 154 : patients.length
   const distributedToday = visualFallback ? 34 : completedCount
   const needsAttention = visualFallback ? 154 : pendingCount
   const firstName = visualFallback ? 'Peeraya' : getFirstName(user?.name)
   const unreadCount = visualFallback ? 1 : Math.max(activeAlerts.length, 0)
+
+  useEffect(() => {
+    if (selectedWardFilter === 'all') return
+    if (!wardFilterOptions.some((option) => option.id === selectedWardFilter)) {
+      setSelectedWardFilter('all')
+    }
+  }, [selectedWardFilter, wardFilterOptions])
 
   const openNotifications = (filter?: 'all' | 'stock') => {
     router.push({
@@ -511,16 +606,16 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#FFF9F1]" edges={['left', 'right']}>
+    <View style={{ flex: 1, backgroundColor: '#FFF9F1' }}>
+      <Tabs.Screen options={{ tabBarStyle: { display: 'none' } }} />
+      <SafeAreaView className="flex-1" edges={['left', 'right']}>
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 6 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F2A24B" />}
       >
-        <View className="bg-[#FFB464] px-6 pt-12 pb-8">
-          <View className="absolute right-[-35] top-2 w-36 h-36 rounded-full bg-[#FFD2A6] opacity-50" />
-          <View className="absolute right-3 top-8 w-20 h-20 rounded-full bg-[#FFE5CA] opacity-80" />
+        <ImageBackground source={BackgroundImg} className="px-6 pt-12 pb-8" resizeMode="cover" imageStyle={{ width: '100%', height: '100%' }}>
 
           <View className="flex-row items-start justify-between pt-1">
             <View className="flex-1 pr-4">
@@ -549,8 +644,8 @@ export default function HomeScreen() {
           </View>
 
           <View className="flex-row mt-5 gap-3">
-            <StatCard label="Total Recipients" value={totalRecipients} icon="medkit-outline" onPress={() => router.push('/patients')} />
-            <StatCard label="Distributed Today" value={distributedToday} icon="hourglass-outline" tintClass="bg-[#F3FFF5]" onPress={() => router.push('/schedule')} />
+            <StatCard label="Total Recipients" value={totalRecipients} icon="medkit-outline" gradient onPress={() => router.push('/patients')} />
+            <StatCard label="Distributed Today" value={distributedToday} icon="hourglass-outline" gradient={['#E4FFF8', '#FFFFFF']} onPress={() => router.push('/schedule')} />
           </View>
 
           <TouchableOpacity onPress={() => router.push('/schedule')} className="mt-3 rounded-[14px] bg-[#FFF4F3] px-4 py-3 flex-row items-center justify-between">
@@ -565,14 +660,14 @@ export default function HomeScreen() {
             </View>
             <Ionicons name="chevron-forward" size={18} color="#3E3A37" />
           </TouchableOpacity>
-        </View>
+        </ImageBackground>
 
         <View className="px-6 pt-6">
           <View className="flex-row justify-between mb-6">
-            <ActionItem SvgIcon={DoubleCheckIcon} iconSize={38} label={'Double\nCheck'} onPress={() => router.push('/schedule')} />
-            <ActionItem SvgIcon={ScanMedicationIcon} iconSize={36} label={'Scan\nMedication'} onPress={() => router.push('/scanner')} />
-            <ActionItem SvgIcon={LowStockIcon} iconSize={34} label={'Low Stock'} onPress={() => openNotifications('stock')} />
-            <ActionItem SvgIcon={OrderIcon} iconSize={30} label={'Order'} onPress={() => router.push('/report')} />
+            <ActionItem SvgIcon={DoubleCheckIcon} label={'Double\nCheck'} onPress={() => router.push('/schedule')} />
+            <ActionItem SvgIcon={ScanMedicationIcon} label={'Scan\nMedication'} onPress={() => router.push('/scanner')} />
+            <ActionItem SvgIcon={LowStockIcon} label={'Low Stock'} onPress={() => openNotifications('stock')} />
+            <ActionItem SvgIcon={OrderIcon} label={'Order'} onPress={() => router.push('/report')} />
           </View>
 
           <Card className="bg-[#FFFDF9] shadow-sm mb-6">
@@ -610,18 +705,19 @@ export default function HomeScreen() {
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
               <View className="flex-row">
-                <TouchableOpacity onPress={() => setSelectedWardFilter('all')} className={`rounded-[10px] px-4 py-2.5 mr-2 flex-row items-center ${selectedWardFilter === 'all' ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}>
-                  <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
-                  <Text className="text-[13px] text-[#1F1D1B] ml-2">All Wards</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setSelectedWardFilter('ward-a')} className={`rounded-[10px] px-4 py-2.5 mr-2 flex-row items-center ${selectedWardFilter === 'ward-a' ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}>
-                  <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
-                  <Text className="text-[13px] text-[#1F1D1B] ml-2">Ward A (Floor 1)</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setSelectedWardFilter('ward-b')} className={`rounded-[10px] px-4 py-2.5 flex-row items-center ${selectedWardFilter === 'ward-b' ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}>
-                  <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
-                  <Text className="text-[13px] text-[#1F1D1B] ml-2">Ward B</Text>
-                </TouchableOpacity>
+                {wardFilterOptions.map((option) => (
+                  <TouchableOpacity
+                    key={option.id}
+                    onPress={() => setSelectedWardFilter(option.id)}
+                    className={`rounded-[10px] px-4 py-2.5 mr-2 flex-row items-center ${selectedWardFilter === option.id ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}
+                    style={{ maxWidth: option.id === 'all' ? undefined : 220 }}
+                  >
+                    <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
+                    <Text numberOfLines={1} className="text-[13px] text-[#1F1D1B] ml-2">
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             </ScrollView>
 
@@ -641,5 +737,11 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+    <BottomNav
+      onHome={() => router.replace('/(tabs)')}
+      onWard={() => router.replace('/(tabs)/patients')}
+      onProfile={() => router.replace('/(tabs)/settings')}
+    />
+    </View>
   )
 }

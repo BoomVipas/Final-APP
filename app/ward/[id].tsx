@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Image,
+  ImageBackground,
   Alert,
   Modal,
   Pressable,
@@ -21,6 +23,17 @@ import { USE_MOCK } from '../../src/mocks'
 import { supabase } from '../../src/lib/supabase'
 import type { DispenseItemsRow, DispenseSessionsRow, MealTime, PatientsRow } from '../../src/types/database'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
+import HeroSectionImg from '../../icons/HeroSection.png'
+import FrameIcon from '../../icons/Frame.png'
+import DocumentIcon from '../../icons/Document.png'
+import DispenseIcon from '../../icons/Dispense.png'
+import HealthIcon from '../../icons/Health.png'
+import UnionIcon from '../../icons/Union.png'
+import HomeIcon from '../../icons/Home.png'
+import WardIcon from '../../icons/Ward.png'
+import MedicineIcon from '../../icons/Medicine.png'
+import MealFrameIcon from '../../icons/MealFrame.png'
+import TickIcon from '../../icons/Tick.png'
 import {
   getMachineStatus,
   runDispenseSequence,
@@ -275,7 +288,17 @@ function InternalTab({
       style={active ? { borderBottomWidth: 2, borderBottomColor: '#EFA54F' } : { borderBottomWidth: 2, borderBottomColor: 'transparent' }}
     >
       <View className="flex-row items-center">
-        <Ionicons name={icon} size={20} color={active ? '#EFA54F' : '#2F2F2F'} />
+        {label === 'Patients' ? (
+          <Image
+            source={DocumentIcon}
+            style={{ width: 20, height: 20, tintColor: active ? '#EFA54F' : '#2F2F2F' }}
+          />
+        ) : (
+          <Image
+            source={DispenseIcon}
+            style={{ width: 20, height: 20, tintColor: active ? '#EFA54F' : '#2F2F2F' }}
+          />
+        )}
         <Text
           className="text-[14px] leading-[20px] font-medium ml-2"
           style={{ color: active ? '#EFA54F' : '#1F1F1F' }}
@@ -309,7 +332,10 @@ function PatientRow({
         </Text>
 
         <View className="flex-row items-center mt-1.5">
-          <Ionicons name="cube-outline" size={14} color="#8C93A4" />
+          <Image
+            source={UnionIcon}
+            style={{ width: 14, height: 14, tintColor: '#8C93A4' }}
+          />
           <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1.5">
             Room {card.room}
             {card.age !== null ? ` • Age ${card.age}` : ''}
@@ -317,7 +343,10 @@ function PatientRow({
         </View>
 
         <View className="flex-row items-center mt-1.5">
-          <Ionicons name="medical-outline" size={14} color="#8C93A4" />
+          <Image
+          source={HealthIcon}
+          style={{ width: 14, height: 14, tintColor: '#8C93A4' }}
+        />
           <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1.5">{card.tablets} tablets</Text>
         </View>
 
@@ -352,63 +381,93 @@ function TimeChip({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
-      className="rounded-2xl px-4 py-2.5 mr-2.5 border flex-row items-center"
       style={{
-        backgroundColor: active ? '#F6AB52' : completed ? '#E3FFF7' : '#FFFFFF',
-        borderColor: completed ? '#18C79A' : active ? '#F6AB52' : '#E4E2DE',
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        marginRight: 10,
+        overflow: 'hidden',
       }}
     >
-      {completed ? <Ionicons name="checkmark-circle" size={16} color="#18C79A" style={{ marginRight: 5 }} /> : null}
-      <Text
-        className="text-[14px] leading-[20px]"
-        style={{ color: active ? '#2A2A2A' : completed ? '#18B88E' : '#313131' }}
-      >
-        {label}
-      </Text>
+      {completed ? (
+        <ImageBackground
+          source={MealFrameIcon}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          imageStyle={{ resizeMode: 'stretch' }}
+        />
+      ) : (
+        <View
+          style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: active ? '#F6AB52' : '#FFFFFF',
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: active ? '#F6AB52' : '#E4E2DE',
+          }}
+        />
+      )}
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        {completed ? (
+          <Image source={TickIcon} style={{ width: 16, height: 16, marginRight: 5 }} />
+        ) : null}
+        <Text
+          style={{
+            fontSize: 14,
+            color: active ? '#2A2A2A' : completed ? '#18B88E' : '#313131',
+          }}
+        >
+          {label}
+        </Text>
+      </View>
     </TouchableOpacity>
   )
 }
 
 function DispenseRow({
   card,
-  selected,
-  onToggle,
+  onDispense,
+  onFill,
 }: {
   card: DispenseCardData
-  selected: boolean
-  onToggle: () => void
+  onDispense: (card: DispenseCardData) => void
+  onFill:     (card: DispenseCardData) => void
 }) {
   return (
-    <TouchableOpacity
-      onPress={onToggle}
-      activeOpacity={0.9}
-      className="bg-white rounded-[20px] mx-4 mb-3 px-4 py-4 flex-row items-center"
+    <View
+      className="bg-white rounded-[20px] mx-4 mb-3 px-4 py-4"
       style={CARD_SHADOW}
     >
-      <View
-        className="w-8 h-8 rounded-full border-2 mr-4 items-center justify-center"
-        style={{ borderColor: selected ? '#F1A44F' : '#DDDEDF' }}
-      >
-        {selected ? <View className="w-4 h-4 rounded-full bg-[#F1A44F]" /> : null}
-      </View>
-
-      <View className="flex-1">
-        <Text className="text-[15px] leading-[21px] font-semibold text-[#373737]" numberOfLines={1}>
-          {card.name}
-        </Text>
-        <View className="flex-row items-center mt-1.5">
-          <Ionicons name="cube-outline" size={14} color="#8C93A4" />
-          <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1.5">Room {card.room}</Text>
+      <View className="flex-row items-center mb-3">
+        <View className="flex-1">
+          <Text className="text-[15px] leading-[21px] font-semibold text-[#373737]" numberOfLines={1}>
+            {card.name}
+          </Text>
+          <View className="flex-row items-center mt-1.5">
+            <Ionicons name="cube-outline" size={14} color="#8C93A4" />
+            <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1.5">Room {card.room}</Text>
+            <Ionicons name="medical-outline" size={14} color="#8C93A4" style={{ marginLeft: 10 }} />
+            <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1">{card.tablets} tablets</Text>
+          </View>
         </View>
       </View>
 
-      <View className="flex-row items-center ml-3">
-        <Ionicons name="medical-outline" size={16} color="#F1A44F" />
-        <Text className="text-[14px] leading-[20px] font-semibold text-[#F1A44F] ml-1.5">
-          {card.tablets} tablets
-        </Text>
+      <View className="flex-row gap-2">
+        <TouchableOpacity
+          onPress={() => onFill(card)}
+          activeOpacity={0.8}
+          className="flex-1 border border-[#C96B1A] rounded-full py-2 items-center justify-center"
+        >
+          <Text className="text-[13px] font-semibold text-[#C96B1A]">Fill Weekly ↓</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => onDispense(card)}
+          activeOpacity={0.8}
+          className="flex-1 bg-[#C96B1A] rounded-full py-2 items-center justify-center"
+        >
+          <Text className="text-white text-[13px] font-bold">Dispense →</Text>
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   )
 }
 
@@ -425,12 +484,15 @@ function BottomNav({
     <View className="bg-white border-t border-[#ECE5DB] px-8 pt-3 pb-5">
       <View className="flex-row items-center justify-between">
         <TouchableOpacity onPress={onHome} className="items-center min-w-[76px]">
-          <Ionicons name="home" size={30} color="#2F2F2F" />
+          <Image
+            source={HomeIcon}
+            style={{ width: 30, height: 30, tintColor: '#2F2F2F' }}
+          />
           <Text className="text-[11px] leading-[16px] text-[#2F2F2F] mt-1.5">Home</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={onWard} className="items-center min-w-[76px]">
-          <Ionicons name="bed" size={30} color="#F2A14C" />
+          <Image source={WardIcon} style={{ width: 30, height: 30, tintColor: '#F2A14C' }} />
           <Text className="text-[11px] leading-[16px] font-semibold text-[#2F2F2F] mt-1.5">Ward</Text>
         </TouchableOpacity>
 
@@ -440,7 +502,7 @@ function BottomNav({
         </TouchableOpacity>
       </View>
 
-      <View className="h-1.5 w-32 rounded-full bg-black self-center mt-4" />
+      <View className="h-1.5 w-32 rounded-full self-center mt-4" />
     </View>
   )
 }
@@ -672,14 +734,13 @@ export default function WardDetailScreen() {
   const [sortMode, setSortMode] = useState<SortMode>('urgency')
   const [activeTimeSlot, setActiveTimeSlot] = useState<MealTime>('noon')
   const [visiblePatients, setVisiblePatients] = useState(5)
-  const [selectedPatients, setSelectedPatients] = useState<Set<string>>(new Set())
   const [dispensedExpanded, setDispensedExpanded] = useState(false)
   const [dispenseSessions, setDispenseSessions] = useState<DispenseSessionsRow[]>([])
   const [dispenseItems, setDispenseItems] = useState<DispenseItemsRow[]>([])
   const [dispenseLoading, setDispenseLoading] = useState(false)
 
-  // Dispense machine state
-  const [machineStatus, setMachineStatus]   = useState<MachineStatus | null>(null)
+  // Dispense modal + machine state
+  const [machineStatus, setMachineStatus]     = useState<MachineStatus | null>(null)
   const [checkingMachine, setCheckingMachine] = useState(false)
   const [showDispenseModal, setShowDispenseModal] = useState(false)
   const [dispenseJobs, setDispenseJobs]     = useState<DispenseJob[]>([])
@@ -911,14 +972,6 @@ export default function WardDetailScreen() {
     }
   }, [scheduleDispense, tableDispense])
 
-  useEffect(() => {
-    setSelectedPatients((previous) => {
-      const allowedIds = new Set(activeDispense.pending.map((patient) => patient.id))
-      const next = new Set([...previous].filter((patientId) => allowedIds.has(patientId)))
-      return next
-    })
-  }, [activeDispense.pending, activeTimeSlot])
-
   const initialLoading = !USE_MOCK
     && patientLoading
     && scheduleLoading
@@ -935,85 +988,75 @@ export default function WardDetailScreen() {
     )
   }
 
-  const handleToggleSelectedPatient = (patientId: string) => {
-    setSelectedPatients((previous) => {
-      const next = new Set(previous)
-      if (next.has(patientId)) next.delete(patientId)
-      else next.add(patientId)
-      return next
-    })
-  }
-
   const handleCycleSort = () => {
     const currentIndex = SORT_META.indexOf(sortMode)
     const nextMode = SORT_META[(currentIndex + 1) % SORT_META.length]
     setSortMode(nextMode)
   }
 
-  // ── Dispense trigger flow ──────────────────────────────────────────────────
+  // ── Machine status ────────────────────────────────────────────────────────
 
-  const checkMachineAndOpen = async () => {
-    if (selectedPatients.size === 0) {
-      Alert.alert('No patients selected', 'Select at least one patient before dispensing.')
-      return
-    }
-
+  const refreshMachineStatus = useCallback(async () => {
     setCheckingMachine(true)
     const status = await getMachineStatus()
     setMachineStatus(status)
     setCheckingMachine(false)
+  }, [])
 
-    if (status.state !== 'ready') {
-      Alert.alert(
-        'Machine not ready',
-        `Status: ${status.state}\n${status.message}\n\nPlease check the dispenser before proceeding.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Proceed anyway', onPress: buildAndOpenModal },
-        ],
-      )
-      return
-    }
-    buildAndOpenModal()
+  useEffect(() => {
+    if (activeTab === 'dispense') refreshMachineStatus()
+  }, [activeTab, refreshMachineStatus])
+
+  // ── Weekly fill — navigate to the 3-stage load/schedule/complete flow ────
+
+  const openFillForPatient = (card: DispenseCardData) => {
+    router.push({
+      pathname: '/dispense/load',
+      params: {
+        patientId:   card.id,
+        patientName: card.name,
+        wardId:      effectiveWardId,
+        ward:        wardLabel,
+      },
+    })
   }
 
-  const buildAndOpenModal = async () => {
-    // Look up cabinet_slots to find which physical slot holds each patient's medicine
-    const selectedIds = [...selectedPatients]
-    const pendingForSlot = activeDispense.pending.filter((c) => selectedIds.includes(c.id))
+  // ── Dispense trigger flow (one patient at a time) ─────────────────────────
 
-    // Fetch patient prescriptions + cabinet slots for selected patients
+  const openDispenseForPatient = async (card: DispenseCardData) => {
+    // Fetch ALL active prescriptions for this patient at the current time slot
     const { data: prescriptions } = await supabase
       .from('patient_prescriptions')
       .select('patient_id, medicine_id, dose_quantity')
-      .in('patient_id', selectedIds)
+      .eq('patient_id', card.id)
       .eq('is_active', true)
       .contains('meal_times', [activeTimeSlot])
 
-    const medicineIds = [...new Set((prescriptions ?? []).map((p) => p.medicine_id))]
+    const medicineIds = (prescriptions ?? []).map((p) => p.medicine_id)
 
     const { data: slots } = await supabase
       .from('cabinet_slots')
       .select('medicine_id, cabinet_position')
-      .in('medicine_id', medicineIds)
+      .in('medicine_id', medicineIds.length > 0 ? medicineIds : ['__none__'])
 
     const slotByMedicine = new Map<string, number>()
     for (const s of slots ?? []) {
       if (s.medicine_id) slotByMedicine.set(s.medicine_id, s.cabinet_position)
     }
 
-    // Build ordered job list — one job per patient (first medicine found)
-    const jobs: DispenseJob[] = pendingForSlot.map((card) => {
-      const rx = (prescriptions ?? []).find((p) => p.patient_id === card.id)
-      const cabinet = rx ? (slotByMedicine.get(rx.medicine_id) ?? 1) : 1
-      return {
-        patientId:   card.id,
-        patientName: card.name,
-        room:        card.room,
-        cabinet,
-        tablets:     rx?.dose_quantity ?? card.tablets,
-      }
-    })
+    // One job per prescription (medicine) — machine visits each cabinet slot in sequence
+    const jobs: DispenseJob[] = (prescriptions ?? []).map((rx, i) => ({
+      patientId:   card.id,
+      patientName: card.name,
+      room:        card.room,
+      cabinet:     slotByMedicine.get(rx.medicine_id) ?? (i + 1),
+      tablets:     rx.dose_quantity ?? card.tablets,
+    }))
+
+    // Fall back to single job from card data if no prescriptions found
+    if (jobs.length === 0) {
+      jobs.push({ patientId: card.id, patientName: card.name, room: card.room, cabinet: 1, tablets: card.tablets })
+    }
 
     setDispenseJobs(jobs)
     dispenseEventsRef.current = []
@@ -1024,11 +1067,11 @@ export default function WardDetailScreen() {
     const { data: session, error: sessionError } = await supabase
       .from('dispense_sessions')
       .insert({
-        patient_id:  dispenseJobs[0]?.patientId ?? '',
-        ward_id:     effectiveWardId,
+        patient_id:   dispenseJobs[0]?.patientId ?? '',
+        ward_id:      effectiveWardId,
         initiated_by: user?.id ?? null,
         session_date: new Date().toISOString(),
-        status:      'in_progress',
+        status:       'in_progress',
       })
       .select('id')
       .single()
@@ -1039,13 +1082,12 @@ export default function WardDetailScreen() {
       dispenseJobs.map((j) => ({ cabinet: j.cabinet, patientName: j.patientName })),
       (event) => {
         dispenseEventsRef.current = [...dispenseEventsRef.current, event]
-        // Trigger re-render by updating a state value via the event stream
         setDispenseJobs((prev) => [...prev])
       },
     )
 
-    // Log to medication_logs for each dispensed patient
-    const today = new Date().toISOString()
+    // Log to medication_logs for each medicine dispensed
+    const now = new Date().toISOString()
     for (const job of dispenseJobs) {
       const rx = await supabase
         .from('patient_prescriptions')
@@ -1065,7 +1107,7 @@ export default function WardDetailScreen() {
           meal_time:       activeTimeSlot,
           status:          'confirmed',
           method:          'normal',
-          administered_at: today,
+          administered_at: now,
         })
       }
     }
@@ -1078,8 +1120,6 @@ export default function WardDetailScreen() {
         .eq('id', session.id)
     }
 
-    // Refresh data
-    setSelectedPatients(new Set())
     await fetchDispenseData()
   }
 
@@ -1090,7 +1130,11 @@ export default function WardDetailScreen() {
       <SafeAreaView className="flex-1 bg-[#F7F2EA]" edges={['top', 'left', 'right']}>
         <View className="flex-1">
           <View className="relative h-[220px]">
-            <HeaderBackground />
+            <Image
+              source={HeroSectionImg}
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
+              resizeMode="cover"
+            />
 
             <TouchableOpacity
               onPress={() => router.back()}
@@ -1111,13 +1155,18 @@ export default function WardDetailScreen() {
               </View>
             </View>
 
-            <View className="absolute left-4 right-4 bottom-[-40px] bg-white rounded-[24px] border border-[#ECE5DB]" style={CARD_SHADOW}>
+            <ImageBackground
+              source={FrameIcon}
+              style={{ position: 'absolute', left: 16, right: 16, bottom: -40 }}
+              imageStyle={{ borderRadius: 24, width: '100%', height: '100%' }}
+              resizeMode="stretch"
+            >
               <View className="flex-row">
                 <SummaryStat value={statPatients} label="Patients" borderRight />
                 <SummaryStat value={statSuccessful} label="Successfully" borderRight />
                 <SummaryStat value={statPending} label="Pending" />
               </View>
-            </View>
+            </ImageBackground>
           </View>
 
           <View className="flex-row mt-[52px] bg-white/50">
@@ -1192,6 +1241,31 @@ export default function WardDetailScreen() {
             </ScrollView>
           ) : (
             <View className="flex-1">
+              {/* ── Machine status chip ──────────────────────── */}
+              <TouchableOpacity
+                onPress={refreshMachineStatus}
+                activeOpacity={0.8}
+                className="mx-4 mt-3 mb-1 flex-row items-center px-4 py-2.5 rounded-2xl bg-white"
+                style={{ borderWidth: 1, borderColor: machineStatus?.state === 'ready' ? '#BBF7D0' : '#FCA5A5' }}
+              >
+                {checkingMachine ? (
+                  <ActivityIndicator size="small" color="#9CA3AF" style={{ marginRight: 8 }} />
+                ) : (
+                  <View className={`w-2 h-2 rounded-full mr-2 ${machineStatus?.state === 'ready' ? 'bg-green-500' : 'bg-red-400'}`} />
+                )}
+                <Text className={`text-xs font-semibold flex-1 ${machineStatus?.state === 'ready' ? 'text-green-700' : 'text-red-600'}`}>
+                  {checkingMachine
+                    ? 'Checking machine...'
+                    : machineStatus
+                      ? machineStatus.state === 'ready'
+                        ? 'Machine ready'
+                        : `Machine: ${machineStatus.state}`
+                      : 'Tap to check machine'
+                  }
+                </Text>
+                <Ionicons name="refresh" size={14} color="#9CA3AF" />
+              </TouchableOpacity>
+
               <ScrollView
                 className="flex-1"
                 contentContainerStyle={{ paddingTop: 12, paddingBottom: 36 }}
@@ -1205,7 +1279,10 @@ export default function WardDetailScreen() {
                 >
                   {SLOT_META.map((slot) => {
                     const isActive = activeTimeSlot === slot.key
-                    const completed = !isActive && activeDispense.source !== 'demo' && activeDispense.dispensedCount > 0 && slot.key === 'morning'
+                    const completed = !isActive && activeDispense.source !== 'demo' && (() => {
+                      const slotItems = allItems.filter((item) => item.meal_time === slot.key)
+                      return slotItems.length > 0 && slotItems.every((item) => item.status === 'confirmed')
+                    })()
                     return (
                       <TimeChip
                         key={slot.key}
@@ -1223,8 +1300,8 @@ export default function WardDetailScreen() {
                     <DispenseRow
                       key={card.id}
                       card={card}
-                      selected={selectedPatients.has(card.id)}
-                      onToggle={() => handleToggleSelectedPatient(card.id)}
+                      onDispense={openDispenseForPatient}
+                      onFill={openFillForPatient}
                     />
                   ))
                 ) : (
@@ -1236,33 +1313,8 @@ export default function WardDetailScreen() {
                 )}
               </ScrollView>
 
-              {/* ── Bottom action area ─────────────────────── */}
-              <View className="px-4 pb-4 gap-3">
-
-                {/* Machine status chip */}
-                {machineStatus && (
-                  <View className={`flex-row items-center px-4 py-2.5 rounded-2xl ${
-                    machineStatus.state === 'ready'
-                      ? 'bg-green-50 border border-green-100'
-                      : 'bg-red-50 border border-red-100'
-                  }`}>
-                    <View className={`w-2 h-2 rounded-full mr-2 ${
-                      machineStatus.state === 'ready' ? 'bg-green-500' : 'bg-red-500'
-                    }`} />
-                    <Text className={`text-xs font-semibold ${
-                      machineStatus.state === 'ready' ? 'text-green-700' : 'text-red-700'
-                    }`}>
-                      Machine: {machineStatus.state}
-                    </Text>
-                    {machineStatus.message ? (
-                      <Text className="text-xs text-gray-500 ml-2 flex-1" numberOfLines={1}>
-                        {machineStatus.message}
-                      </Text>
-                    ) : null}
-                  </View>
-                )}
-
-                {/* Dispensed summary collapsible */}
+              {/* ── Dispensed summary ─────────────────────── */}
+              <View className="px-4 pb-4">
                 <TouchableOpacity
                   onPress={() => setDispensedExpanded((c) => !c)}
                   activeOpacity={0.9}
@@ -1293,32 +1345,6 @@ export default function WardDetailScreen() {
                     </View>
                   )}
                 </TouchableOpacity>
-
-                {/* Start dispense button */}
-                <TouchableOpacity
-                  onPress={checkMachineAndOpen}
-                  disabled={checkingMachine || selectedPatients.size === 0}
-                  activeOpacity={0.85}
-                  className={`rounded-[22px] py-4 items-center flex-row justify-center ${
-                    selectedPatients.size === 0
-                      ? 'bg-[#E8D5C4]'
-                      : 'bg-[#C96B1A]'
-                  }`}
-                >
-                  {checkingMachine ? (
-                    <ActivityIndicator color="white" size="small" />
-                  ) : (
-                    <>
-                      <Ionicons name="flash" size={18} color="white" />
-                      <Text className="text-white font-bold text-base ml-2">
-                        {selectedPatients.size === 0
-                          ? 'Select patients to dispense'
-                          : `Dispense for ${selectedPatients.size} patient${selectedPatients.size !== 1 ? 's' : ''}`}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
               </View>
             </View>
           )}
