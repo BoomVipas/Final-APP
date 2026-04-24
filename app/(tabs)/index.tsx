@@ -23,6 +23,8 @@ import HomeIcon from '../../icons/Home.png'
 import WardIcon from '../../icons/Ward.png'
 import ProfileIcon from '../../icons/Profile.png'
 import BackgroundImg from '../../icons/Background.png'
+import SystemIcon from 'icons/SystemIcon'
+import { colors, typo } from '@/theme/typo'
 
 interface AlertCardData {
   id: string
@@ -584,14 +586,14 @@ export default function HomeScreen() {
 
           <View className="flex-row items-start justify-between pt-1">
             <View className="flex-1 pr-4">
-              <Text className="text-[13px] text-[#38332E]">{getGreeting(today)}</Text>
+              <Text className="text-[14px] text-[#38332E]">{getGreeting(today)}</Text>
               <View className="flex-row items-center mt-1">
-                <Text className="text-[24px] leading-[30px] font-bold text-[#2E2C2A]">{firstName}</Text>
+                <Text style={[typo.headlineSmall, { color: colors.text }]}>{firstName}</Text>
                 <Ionicons name="chevron-down" size={16} color="#2E2C2A" style={{ marginLeft: 3 }} />
               </View>
 
               <View className="flex-row items-center mt-2">
-                <Ionicons name="calendar-outline" size={14} color="#2E2C2A" />
+                <SystemIcon />
                 <Text className="text-[12px] text-[#2E2C2A] ml-1.5">
                   {formatHeaderDate(today)} • {getDoseLabel(today)}
                 </Text>

@@ -15,10 +15,11 @@ import { useMedicationStore } from '../../src/stores/medicationStore'
 import { Card } from '../../src/components/ui/Card'
 import WardpicIcon from '../../icons/Wardpic.png'
 import BackgroundWardImage from '../../icons/Backgroundward.png'
-import HospitalIcon from '../../icons/hospital.png'
+
 import HomeIcon from '../../icons/Home.png'
 import WardIcon from '../../icons/Ward.png'
 import ProfileIcon from '../../icons/Profile.png'
+import HospitalIcon from 'icons/HospitalIcon'
 
 interface WardSummaryCard {
   id: string
@@ -207,7 +208,7 @@ export default function PatientsScreen() {
         <View style={{ width: Dimensions.get('window').width }}>
           <Image source={BackgroundWardImage} style={{ width: Dimensions.get('window').width, height: 240 }} resizeMode="cover" />
           <View className="absolute bottom-7 left-7 flex-row items-center">
-            <Image source={HospitalIcon} style={{ width: 30, height: 30 }} resizeMode="contain" />
+            <HospitalIcon />
             <Text className="text-[28px] leading-[32px] font-bold text-[#2D2B29] ml-3">Ward</Text>
           </View>
         </View>
