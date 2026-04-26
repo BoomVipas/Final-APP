@@ -3,7 +3,7 @@ import Svg, { Path, Rect } from 'react-native-svg'
 
 export default function OrderIcon({ width = 36, height = 36 }: { width?: number; height?: number }) {
   return (
-    <Svg width={width} height={height} viewBox="0 0 36 36" fill="none">
+    <Svg width={width} height={height} viewBox="-3 -1 36 36" fill="none">
       <Path
         d="M2.72095 31.1113V4.86137L6.41537 22.3613L20.4153 31.6946L2.72095 31.1113Z"
         fill="#EB892E"

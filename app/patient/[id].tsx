@@ -22,6 +22,13 @@ import { USE_MOCK, MOCK_PRESCRIPTIONS, mockSelectPatient } from '../../src/mocks
 import { supabase } from '../../src/lib/supabase'
 import type { MealTime } from '../../src/types/database'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
+import HomeIcon from '../../icons/Home.svg'
+import WardIcon from '../../icons/Ward.svg'
+import ProfileIcon from '../../icons/Profile.svg'
+import MedicineIcon from '../../icons/Medicine.svg'
+import HealthIcon from '../../icons/Health.svg'
+import AppointmentIcon from '../../icons/Appointment.svg'
+import DetailsIcon from '../../icons/Details.svg'
 
 type DetailTab = 'medications' | 'appointments' | 'device'
 type WarningTone = 'critical' | 'warning' | null
@@ -518,7 +525,7 @@ function MedicationCard({ medication }: { medication: DisplayMedication }) {
           </Text>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-            <Ionicons name="medkit-outline" size={13} color="#7E8797" />
+            <HealthIcon width={13} height={13} color="#7E8797" />
             <Text style={{ marginLeft: 5, fontSize: 13, lineHeight: 18, color: '#727C8F' }}>
               {getMedicationLabel(medication.doseQuantity, medication.dosageForm)}
             </Text>
@@ -912,11 +919,11 @@ export default function PatientDetailScreen() {
   const detailTabs: Array<{
     key: DetailTab
     label: string
-    icon: keyof typeof Ionicons.glyphMap
+    Icon: React.FC<{ width?: number; height?: number; color?: string }>
   }> = [
-    { key: 'medications', label: 'Medication', icon: 'medkit-outline' },
-    { key: 'appointments', label: 'Appointments', icon: 'people-outline' },
-    { key: 'device', label: 'Device', icon: 'pulse-outline' },
+    { key: 'medications', label: 'Medication', Icon: MedicineIcon },
+    { key: 'appointments', label: 'Appointments', Icon: AppointmentIcon },
+    { key: 'device', label: 'Device', Icon: DetailsIcon },
   ]
 
   const appointments = DEFAULT_APPOINTMENTS.map((item, index) => ({
@@ -1045,7 +1052,7 @@ export default function PatientDetailScreen() {
                 </View>
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-                  <Ionicons name="medkit-outline" size={15} color="#2F2E2D" />
+                  <HealthIcon width={15} height={15} color="#2F2E2D" />
                   <Text style={{ marginLeft: 7, fontSize: 13, lineHeight: 18, color: '#2F2E2D' }}>
                     {heroMedicationCount} tablets
                   </Text>
@@ -1060,28 +1067,20 @@ export default function PatientDetailScreen() {
 
       <View
         style={{
-          marginTop: -94,
-          marginHorizontal: 18,
+          marginTop: -74,
+          marginHorizontal: 50,
+          height: 116,
           borderRadius: 28,
           backgroundColor: '#FFFFFF',
-          paddingHorizontal: 14,
-          paddingVertical: 18,
-          shadowColor: '#D5C5AF',
-          shadowOpacity: 0.34,
-          shadowOffset: { width: 0, height: 20 },
-          shadowRadius: 28,
-          elevation: 7,
+          overflow: 'hidden',
+          shadowColor: '#D7CCBB',
+          shadowOpacity: 0.22,
+          shadowOffset: { width: 0, height: 8 },
+          shadowRadius: 16,
+          elevation: 4,
         }}
       >
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'stretch',
-            minHeight: 116,
-            borderRadius: 22,
-            backgroundColor: '#FBFBFB',
-          }}
-        >
+        <View style={{ flexDirection: 'row', alignItems: 'stretch', flex: 1 }}>
           <StatBlock value={statType} label="Type" />
           <View style={{ width: 1, backgroundColor: '#ECE9E3', marginVertical: 18 }} />
           <StatBlock value={statDosePerDay} label="Dose/Day" />
@@ -1094,6 +1093,7 @@ export default function PatientDetailScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {detailTabs.map((tab) => {
             const isActive = activeTab === tab.key
+            const TabIcon = tab.Icon
 
             return (
               <TouchableOpacity
@@ -1110,11 +1110,7 @@ export default function PatientDetailScreen() {
                   gap: 8,
                 }}
               >
-                <Ionicons
-                  name={tab.icon}
-                  size={22}
-                  color={isActive ? '#F1A34A' : '#2F2E2D'}
-                />
+                <TabIcon width={22} height={22} color={isActive ? '#F1A34A' : '#2F2E2D'} />
                 <Text
                   style={{
                     fontSize: 16,
@@ -1169,10 +1165,10 @@ export default function PatientDetailScreen() {
             position: 'absolute',
             left: 0,
             right: 0,
-            bottom: 0,
+            bottom: 96,
             paddingHorizontal: 18,
             paddingTop: 12,
-            paddingBottom: 24,
+            paddingBottom: 12,
             backgroundColor: '#F7F2EA',
           }}
         >
@@ -1206,6 +1202,26 @@ export default function PatientDetailScreen() {
           </TouchableOpacity>
         </View>
       ) : null}
+
+      <View style={{ backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#ECE5DB', paddingHorizontal: 32, paddingTop: 12, paddingBottom: 20 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={{ alignItems: 'center', minWidth: 76 }}>
+            <HomeIcon width={30} height={30} color="#2F2F2F" />
+            <Text style={{ fontSize: 11, color: '#2F2F2F', marginTop: 6 }}>Home</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => router.replace('/(tabs)/patients')} style={{ alignItems: 'center', minWidth: 76 }}>
+            <WardIcon width={30} height={30} color="#2F2F2F" />
+            <Text style={{ fontSize: 11, fontWeight: '600', color: '#2F2F2F', marginTop: 6 }}>Ward</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => router.replace('/(tabs)/settings')} style={{ alignItems: 'center', minWidth: 76 }}>
+            <ProfileIcon width={30} height={30} color="#2F2F2F" />
+            <Text style={{ fontSize: 11, color: '#2F2F2F', marginTop: 6 }}>Profile</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={{ height: 6, width: 128, borderRadius: 999, alignSelf: 'center', marginTop: 16 }} />
+      </View>
     </View>
   )
 }

@@ -5,19 +5,28 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { LinearGradient } from 'expo-linear-gradient'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Tabs, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import DoubleCheckIcon from '../../icons/DoubleCheckIcon'
 import ScanMedicationIcon from '../../icons/ScanMedicationIcon'
 import LowStockIcon from '../../icons/LowStockIcon'
 import OrderIcon from '../../icons/OrderIcon'
+import PillIcon from '../../icons/PillIcon'
+import HourglassIcon from '../../icons/HourglassIcon'
+import AlarmClockIcon from '../../icons/AlarmClockIcon'
 import { useAuthStore } from '../../src/stores/authStore'
 import { usePatientStore } from '../../src/stores/patientStore'
 import { useMedicationStore } from '../../src/stores/medicationStore'
 import { useNotificationStore } from '../../src/stores/notificationStore'
 import { Card } from '../../src/components/ui/Card'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
+import { supabase } from '../../src/lib/supabase'
+import type { WardsRow } from '../../src/types/database'
+import { BottomNav } from '../../src/components/shared/BottomNav'
+import SystemIcon from 'icons/SystemIcon'
+import { colors, typo } from '@/theme/typo'
 
 interface AlertCardData {
   id: string
@@ -35,6 +44,7 @@ interface DispensePatientCard {
   name: string
   room: string
   age: string
+  wardId: string
   ward: string
   tablets: string
   statusLabel: string
@@ -42,6 +52,12 @@ interface DispensePatientCard {
   tags: string[]
   note?: string
   moreCount?: number
+}
+
+interface WardFilterOption {
+  id: string
+  label: string
+  patientCount: number
 }
 
 function formatHeaderDate(date: Date): string {
@@ -101,14 +117,19 @@ function formatWardLabel(wardId: string | null | undefined): string {
   return `Ward ${wardId}`
 }
 
+function formatWardOptionLabel(wardId: string, ward?: Pick<WardsRow, 'name' | 'floor'> | null): string {
+  const name = ward?.name?.trim() || formatWardLabel(wardId)
+  const floor = ward?.floor?.trim()
+  if (!floor) return name
+  return name.toLowerCase().includes(floor.toLowerCase()) ? name : `${name} (${floor})`
+}
+
 function ActionItem({
   SvgIcon,
-  iconSize = 34,
   label,
   onPress,
 }: {
   SvgIcon: React.FC<{ width?: number; height?: number }>
-  iconSize?: number
   label: string
   onPress: () => void
 }) {
@@ -116,11 +137,11 @@ function ActionItem({
 
   return (
     <TouchableOpacity onPress={onPress} className="flex-1 items-center px-1">
-      <View className="w-[54px] h-[54px] rounded-[18px] bg-[#FFF5E8] items-center justify-center mb-2">
-        <SvgIcon width={iconSize} height={iconSize} />
+      <View className="w-[62px] h-[62px] rounded-[20px] bg-[#FFF5E8] items-center justify-center mb-2.5">
+        <SvgIcon width={42} height={42} />
       </View>
       {lines.map((line, i) => (
-        <Text key={i} className="text-[11px] leading-[14px] font-semibold text-[#2E2C2A] text-center">
+        <Text key={i} className="text-[11px] leading-[15px] font-semibold text-[#2E2C2A] text-center">
           {line}
         </Text>
       ))}
@@ -128,36 +149,61 @@ function ActionItem({
   )
 }
 
+interface StatCardGradient {
+  colors: [string, string]
+  start: { x: number; y: number }
+  end: { x: number; y: number }
+}
+
 function StatCard({
   label,
   value,
-  icon,
-  tintClass,
+  SvgIcon,
+  iconBg,
+  iconColor,
+  gradient,
   onPress,
 }: {
   label: string
   value: number
-  icon: React.ComponentProps<typeof Ionicons>['name']
-  tintClass?: string
+  SvgIcon: React.FC<{ width?: number; height?: number; color?: string }>
+  iconBg?: string
+  iconColor?: string
+  gradient: StatCardGradient
   onPress: () => void
 }) {
+  const cardStyle = {
+    flex: 1,
+    borderRadius: 14,
+  }
+
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.88}
-      className={`flex-1 rounded-[18px] bg-white px-4 py-4 ${tintClass ?? ''}`}
+    <LinearGradient
+      colors={gradient.colors}
+      start={gradient.start}
+      end={gradient.end}
+      style={cardStyle}
     >
-      <View className="flex-row items-start justify-between">
-        <Text className="text-[13px] leading-[18px] text-[#3B3836] flex-1 pr-2">{label}</Text>
-        <View className="w-9 h-9 rounded-full bg-[#F5F5F5] items-center justify-center">
-          <Ionicons name={icon} size={18} color="#303030" />
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.88}
+        style={{ flex: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14 }}
+      >
+        <View className="flex-row items-start justify-between">
+          <Text className="text-[15px] leading-[20px] font-medium text-[#3B3836] flex-1 pr-2">{label}</Text>
+          <View
+            className="w-11 h-11 rounded-full items-center justify-center"
+            style={{ backgroundColor: iconBg ?? '#EBEBEB' }}
+          >
+            <SvgIcon width={22} height={22} color={iconColor ?? '#505050'} />
+          </View>
         </View>
-      </View>
-      <View className="flex-row items-end justify-between mt-3">
-        <Text className="text-[26px] font-bold text-[#303030]">{value}</Text>
-        <Ionicons name="chevron-forward" size={18} color="#454545" />
-      </View>
-    </TouchableOpacity>
+        <View className="flex-row items-end justify-between mt-4">
+          <Text className="text-[30px] font-bold text-[#1F1D1B]">{value}</Text>
+          <Ionicons name="chevron-forward" size={18} color="#5A5654" />
+        </View>
+      </TouchableOpacity>
+    </LinearGradient>
   )
 }
 
@@ -174,39 +220,40 @@ function AlertCard({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.9}
-      className="bg-white border border-[#EFE4D5] rounded-[18px] px-4 py-4 mb-4 shadow-sm"
+      className="bg-white border border-[#F0E6D8] rounded-[16px] px-4 pt-4 pb-4 mb-3"
+      style={{ shadowColor: '#B09070', shadowOpacity: 0.07, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 }}
     >
       <View className="flex-row items-start">
-        <View className="w-12 h-12 rounded-[12px] bg-[#FFF4E6] items-center justify-center mr-3">
-          <Text className="text-[22px]">💊</Text>
+        <View className="w-[52px] h-[52px] rounded-[14px] bg-[#FFF3E4] items-center justify-center mr-3">
+          <Text className="text-[26px]">💊</Text>
         </View>
 
         <View className="flex-1 pr-2">
-          <Text className="text-[14px] font-bold text-[#343230]">{alert.patientName}</Text>
-          <Text className="text-[13px] text-[#4B4744] mt-0.5">{alert.title}</Text>
+          <Text className="text-[14px] font-bold text-[#282420]">{alert.patientName}</Text>
+          <Text className="text-[12.5px] text-[#5A5450] mt-0.5">{alert.title}</Text>
 
-          <View className="flex-row items-center mt-1.5">
-            <Ionicons name="medkit-outline" size={13} color="#86808A" />
-            <Text className="text-[12px] text-[#7D7780] ml-1.5">{alert.medication}</Text>
+          <View className="flex-row items-center mt-2">
+            <Ionicons name="medkit-outline" size={12} color="#9B9590" />
+            <Text className="text-[12px] text-[#837E7A] ml-1.5" numberOfLines={1}>{alert.medication}</Text>
           </View>
 
           <View className="flex-row items-center mt-1">
-            <Ionicons name="time-outline" size={13} color="#86808A" />
-            <Text className="text-[12px] text-[#7D7780] ml-1.5">{alert.detail}</Text>
+            <Ionicons name="time-outline" size={12} color="#9B9590" />
+            <Text className="text-[12px] text-[#837E7A] ml-1.5">{alert.detail}</Text>
           </View>
 
-          <View className={`self-start mt-3 rounded-full px-3 py-1 ${
-            alert.ctaTone === 'danger' ? 'bg-[#FFF1F1]' : 'bg-[#FFF3EA]'
+          <View className={`self-start mt-3 rounded-full px-3 py-1.5 ${
+            alert.ctaTone === 'danger' ? 'bg-[#FFEEED]' : 'bg-[#FFF2E4]'
           }`}>
-            <Text className={`text-[11px] ${
-              alert.ctaTone === 'danger' ? 'text-[#FF6A63]' : 'text-[#F39A47]'
+            <Text className={`text-[11px] font-medium ${
+              alert.ctaTone === 'danger' ? 'text-[#FF5A52]' : 'text-[#E08830]'
             }`}>
               🔔 {alert.cta}
             </Text>
           </View>
         </View>
 
-        <TouchableOpacity onPress={onMorePress} className="min-h-[28px] min-w-[20px] items-center justify-center">
+        <TouchableOpacity onPress={onMorePress} className="min-h-[32px] min-w-[24px] items-center justify-center">
           <Ionicons name="ellipsis-vertical" size={16} color="#4A4744" />
         </TouchableOpacity>
       </View>
@@ -273,79 +320,157 @@ function PatientCard({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.9}
-      className="bg-white border border-[#EEE3D6] rounded-[22px] px-4 py-4 mb-4 shadow-sm"
+      className="bg-white border border-[#EDE4D8] rounded-[18px] px-4 py-4 mb-3"
+      style={{ shadowColor: '#A07840', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 }}
     >
       <View className="flex-row items-start">
         <PatientAvatar name={patient.name} size={48} className="mr-3" />
 
         <View className="flex-1 pr-2">
           <View className="flex-row items-start justify-between">
-            <Text className="text-[14px] font-bold text-[#343230] flex-1 pr-2">{patient.name}</Text>
-            <TouchableOpacity onPress={onMorePress} className="min-h-[28px] min-w-[20px] items-center justify-center">
+            <Text className="text-[14px] font-bold text-[#282420] flex-1 pr-2">{patient.name}</Text>
+            <TouchableOpacity onPress={onMorePress} className="min-h-[32px] min-w-[24px] items-center justify-center">
               <Ionicons name="ellipsis-vertical" size={16} color="#4A4744" />
             </TouchableOpacity>
           </View>
 
-          <Text className="text-[12px] text-[#7B7580] mt-0.5">
+          <Text className="text-[12px] text-[#7B7880] mt-0.5">
             {patient.room} • Age {patient.age} • {patient.ward}
           </Text>
 
           <View className="flex-row items-center mt-1.5">
-            <Ionicons name="medkit-outline" size={13} color="#7B7580" />
-            <Text className="text-[12px] text-[#7B7580] ml-1.5 mr-2">{patient.tablets}</Text>
+            <Ionicons name="medkit-outline" size={13} color="#7B7880" />
+            <Text className="text-[12px] text-[#7B7880] ml-1.5 mr-2">{patient.tablets}</Text>
             <StatusChip label={patient.statusLabel} tone={patient.statusTone} />
           </View>
         </View>
       </View>
 
-      <View className="h-px bg-[#F0E9E0] my-4" />
+      <View className="h-px bg-[#EDE7DF] my-3" />
 
       {patient.note ? (
-        <Text className="text-[13px] text-[#FF6A63] mb-3">{patient.note}</Text>
+        <Text className="text-[12.5px] text-[#E05A4E] mb-2.5">{patient.note}</Text>
       ) : null}
 
-      <View className="flex-row overflow-hidden">
+      <View className="flex-row flex-wrap">
         {visibleTags.map((tag, index) => (
           <MedicationTag key={`${tag}-${index}`} label={tag} accent={index < 2 && patient.statusTone !== 'done'} />
         ))}
       </View>
 
       {hiddenTagCount ? (
-        <Text className="text-[13px] text-[#6B6560] mt-3">+{hiddenTagCount} more items</Text>
+        <Text className="text-[12px] text-[#6B6560] mt-2">+{hiddenTagCount} more items</Text>
       ) : null}
     </TouchableOpacity>
   )
 }
 
+
 export default function HomeScreen() {
   const router = useRouter()
+  const insets = useSafeAreaInsets()
   const { user } = useAuthStore()
   const { patients, fetchPatients } = usePatientStore()
   const { scheduleGroups, pendingCount, completedCount, fetchSchedule } = useMedicationStore()
   const { activeAlerts, fetchNotifications } = useNotificationStore()
   const [refreshing, setRefreshing] = useState(false)
   const [alertsExpanded, setAlertsExpanded] = useState(true)
-  const [selectedWardFilter, setSelectedWardFilter] = useState<'all' | 'ward-a' | 'ward-b'>('all')
+  const [selectedWardFilter, setSelectedWardFilter] = useState('all')
+  const [wardOptions, setWardOptions] = useState<WardFilterOption[]>([])
+  const [wardLabelById, setWardLabelById] = useState<Record<string, string>>({})
 
   const today = new Date()
   const todayStr = today.toISOString().slice(0, 10)
   const wardId = user?.ward_id ?? ''
+  const wardScope = wardId
 
   const allTodayItems = scheduleGroups.flatMap((group) => group.items)
   const visualFallback = patients.length === 0 && allTodayItems.length === 0 && activeAlerts.length === 0
 
+  const fetchWardOptions = useCallback(async (scopeWardId: string) => {
+    try {
+      let patientQuery = supabase
+        .from('patients')
+        .select('ward_id')
+        .eq('status', 'active')
+        .not('ward_id', 'is', null)
+
+      if (scopeWardId) {
+        patientQuery = patientQuery.eq('ward_id', scopeWardId)
+      }
+
+      const { data: patientRows, error: patientError } = await patientQuery
+      if (patientError) throw patientError
+
+      const counts = new Map<string, number>()
+      for (const row of patientRows ?? []) {
+        if (!row.ward_id) continue
+        counts.set(row.ward_id, (counts.get(row.ward_id) ?? 0) + 1)
+      }
+
+      const wardIds = [...counts.keys()]
+      if (wardIds.length === 0) {
+        setWardOptions([])
+        setWardLabelById({})
+        return
+      }
+
+      const { data: wards } = await supabase
+        .from('wards')
+        .select('id, name, floor')
+        .in('id', wardIds)
+
+      const wardsById = new Map((wards ?? []).map((ward) => [ward.id, ward as Pick<WardsRow, 'name' | 'floor'>]))
+      const labels = Object.fromEntries(
+        wardIds.map((id) => [id, formatWardOptionLabel(id, wardsById.get(id))]),
+      )
+
+      setWardLabelById(labels)
+      setWardOptions(
+        wardIds
+          .map((id) => ({
+            id,
+            label: labels[id],
+            patientCount: counts.get(id) ?? 0,
+          }))
+          .filter((option) => option.patientCount > 0)
+          .sort((a, b) => a.label.localeCompare(b.label)),
+      )
+    } catch {
+      if (scopeWardId) {
+        setWardOptions([{ id: scopeWardId, label: formatWardLabel(scopeWardId), patientCount: patients.length }])
+        setWardLabelById({ [scopeWardId]: formatWardLabel(scopeWardId) })
+      } else {
+        setWardOptions([])
+        setWardLabelById({})
+      }
+    }
+  }, [patients.length])
+
   const loadData = useCallback(async () => {
-    if (!wardId) return
+    if (!user) return
     await Promise.all([
-      fetchPatients(wardId),
-      fetchSchedule(wardId, todayStr),
+      fetchPatients(wardScope),
+      fetchSchedule(wardScope, todayStr),
+      fetchWardOptions(wardScope),
       user ? fetchNotifications(user.id) : Promise.resolve(),
     ])
-  }, [fetchNotifications, fetchPatients, fetchSchedule, todayStr, user, wardId])
+  }, [fetchNotifications, fetchPatients, fetchSchedule, fetchWardOptions, todayStr, user, wardScope])
 
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (wardOptions.length === 1) {
+      setSelectedWardFilter(wardOptions[0].id)
+      return
+    }
+
+    if (selectedWardFilter !== 'all' && !wardOptions.some((option) => option.id === selectedWardFilter)) {
+      setSelectedWardFilter('all')
+    }
+  }, [selectedWardFilter, wardOptions])
 
   const onRefresh = async () => {
     setRefreshing(true)
@@ -382,7 +507,8 @@ export default function HomeScreen() {
           name: patient.name,
           room: patient.room_number ? `Room ${patient.room_number}` : 'No room',
           age: getAge(patient.date_of_birth),
-          ward: formatWardLabel(wardId),
+          wardId: patient.ward_id,
+          ward: wardLabelById[patient.ward_id] ?? formatWardLabel(patient.ward_id),
           tablets: `${Math.max(patientItems.length, 1) * 4} tablets`,
           statusLabel: statusTone === 'urgent' ? 'Urgent' : statusTone === 'pending' ? 'Pending' : 'Dispensed',
           statusTone,
@@ -397,7 +523,7 @@ export default function HomeScreen() {
         return order[a.statusTone] - order[b.statusTone]
       })
       .slice(0, 3)
-  }, [allTodayItems, patients, wardId])
+  }, [allTodayItems, patients, wardLabelById])
 
   const demoAlertCards: AlertCardData[] = [
     {
@@ -428,6 +554,7 @@ export default function HomeScreen() {
       name: 'Mr. Somchai Wongsri',
       room: 'Room A-102',
       age: '78',
+      wardId: 'ward-a',
       ward: 'Ward A',
       tablets: '12 tablets',
       statusLabel: 'Urgent',
@@ -440,6 +567,7 @@ export default function HomeScreen() {
       name: 'Mrs. Polo Suksan',
       room: 'Room B-201',
       age: '81',
+      wardId: 'ward-b',
       ward: 'Ward B',
       tablets: '9 tablets',
       statusLabel: 'Pending',
@@ -453,6 +581,7 @@ export default function HomeScreen() {
       name: 'Mr. Mana Jai',
       room: 'Room B-203',
       age: '69',
+      wardId: 'ward-b',
       ward: 'Ward B',
       tablets: '5 tablets',
       statusLabel: 'Dispensed',
@@ -463,10 +592,14 @@ export default function HomeScreen() {
 
   const alertCards = visualFallback ? demoAlertCards : liveAlertCards
   const patientCards = visualFallback ? demoPatientCards : livePatientCards
+  const demoWardOptions: WardFilterOption[] = [
+    { id: 'ward-a', label: 'Ward A', patientCount: 1 },
+    { id: 'ward-b', label: 'Ward B', patientCount: 2 },
+  ]
+  const filterOptions = visualFallback ? demoWardOptions : wardOptions
   const filteredPatientCards = patientCards.filter((patient) => {
     if (selectedWardFilter === 'all') return true
-    if (selectedWardFilter === 'ward-a') return patient.ward.toLowerCase().includes('ward a')
-    return patient.ward.toLowerCase().includes('ward b')
+    return patient.wardId === selectedWardFilter
   })
   const visibleAlertCards = alertsExpanded ? alertCards : []
   const totalRecipients = visualFallback ? 154 : patients.length
@@ -511,27 +644,34 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-[#FFF9F1]" edges={['left', 'right']}>
+    <View style={{ flex: 1, backgroundColor: '#FBF0E3' }}>
+      <Tabs.Screen options={{ tabBarStyle: { display: 'none' } }} />
+      <SafeAreaView className="flex-1" edges={['left', 'right']}>
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 6 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F2A24B" />}
+        style={{ backgroundColor: '#FBF0E3' }}
+        contentContainerStyle={{ paddingBottom: Math.max(16, insets.bottom + 16) }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E8721A" />}
       >
-        <View className="bg-[#FFB464] px-6 pt-12 pb-8">
-          <View className="absolute right-[-35] top-2 w-36 h-36 rounded-full bg-[#FFD2A6] opacity-50" />
-          <View className="absolute right-3 top-8 w-20 h-20 rounded-full bg-[#FFE5CA] opacity-80" />
+        <LinearGradient
+          colors={['#FBF0E3', '#F2A65A']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={{ paddingTop: insets.top + 16 }}
+          className="px-5 pb-6"
+        >
 
-          <View className="flex-row items-start justify-between pt-1">
+          <View className="flex-row items-start justify-between pt-1 px-6 py-3">
             <View className="flex-1 pr-4">
-              <Text className="text-[13px] text-[#38332E]">{getGreeting(today)}</Text>
+              <Text className="text-[14px] text-[#38332E]">{getGreeting(today)}</Text>
               <View className="flex-row items-center mt-1">
-                <Text className="text-[24px] leading-[30px] font-bold text-[#2E2C2A]">{firstName}</Text>
+                <Text style={[typo.headlineSmall, { color: colors.text }]}>{firstName}</Text>
                 <Ionicons name="chevron-down" size={16} color="#2E2C2A" style={{ marginLeft: 3 }} />
               </View>
 
               <View className="flex-row items-center mt-2">
-                <Ionicons name="calendar-outline" size={14} color="#2E2C2A" />
+                <SystemIcon />
                 <Text className="text-[12px] text-[#2E2C2A] ml-1.5">
                   {formatHeaderDate(today)} • {getDoseLabel(today)}
                 </Text>
@@ -548,31 +688,97 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <View className="flex-row mt-5 gap-3">
-            <StatCard label="Total Recipients" value={totalRecipients} icon="medkit-outline" onPress={() => router.push('/patients')} />
-            <StatCard label="Distributed Today" value={distributedToday} icon="hourglass-outline" tintClass="bg-[#F3FFF5]" onPress={() => router.push('/schedule')} />
-          </View>
-
-          <TouchableOpacity onPress={() => router.push('/schedule')} className="mt-3 rounded-[14px] bg-[#FFF4F3] px-4 py-3 flex-row items-center justify-between">
-            <View className="flex-row items-center flex-1">
-              <View className="w-9 h-9 rounded-full bg-white items-center justify-center mr-3">
-                <Ionicons name="alarm-outline" size={18} color="#FF7A73" />
-              </View>
-              <View>
-                <Text className="text-[13px] text-[#343230]">Needs Attention</Text>
-                <Text className="text-[16px] font-bold text-[#FF6464]">{needsAttention}</Text>
-              </View>
+          <View className="mt-5 px-3 flex-row gap-3">
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: 'white',
+                borderRadius: 18,
+                padding: 6,
+                shadowColor: '#000',
+                shadowOpacity: 0.06,
+                shadowRadius: 12,
+                shadowOffset: { width: 0, height: 3 },
+                elevation: 3,
+              }}
+            >
+              <StatCard
+                label="Total Recipients"
+                value={totalRecipients}
+                SvgIcon={PillIcon}
+                iconBg="#FFFFFF"
+                iconColor="#2E2C2A"
+                gradient={{ colors: ['#FFFFFF', '#F1F1F1'], start: { x: 0, y: 1 }, end: { x: 0, y: 0 } }}
+                onPress={() => router.push('/patients')}
+              />
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#3E3A37" />
-          </TouchableOpacity>
-        </View>
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: 'white',
+                borderRadius: 18,
+                padding: 6,
+                shadowColor: '#000',
+                shadowOpacity: 0.06,
+                shadowRadius: 12,
+                shadowOffset: { width: 0, height: 3 },
+                elevation: 3,
+              }}
+            >
+              <StatCard
+                label="Distributed Today"
+                value={distributedToday}
+                SvgIcon={HourglassIcon}
+                iconBg="#FFFFFF"
+                iconColor="#1B8C67"
+                gradient={{ colors: ['#E3FCEA', '#E3FCEA00'], start: { x: 0, y: 0 }, end: { x: 0, y: 1 } }}
+                onPress={() => router.push('/schedule')}
+              />
+            </View>
+          </View>
+          
+          <View className="px-4 pt-2 pb-4">
+            <LinearGradient
+              colors={['#FFFFFF', '#FFE6E6']}
+              start={{ x: 1, y: 0 }}
+              end={{ x: 0, y: 0 }}
+              style={{
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor: '#F1F1F1',
+                shadowColor: '#000',
+                shadowOpacity: 0.05,
+                shadowRadius: 20,
+                shadowOffset: { width: 0, height: 4 },
+                elevation: 2,
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => router.push('/schedule')}
+                activeOpacity={0.88}
+                style={{ borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                    <AlarmClockIcon width={22} height={22} color="#FF6B6B" />
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 14, color: '#2E2C2A', fontWeight: '500' }}>Needs Attention</Text>
+                    <Text style={{ fontSize: 26, fontWeight: '700', color: '#FF5A52', lineHeight: 32 }}>{needsAttention}</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#3E3A37" />
+              </TouchableOpacity>
+            </LinearGradient>
+          </View>
+        </LinearGradient>
 
         <View className="px-6 pt-6">
           <View className="flex-row justify-between mb-6">
-            <ActionItem SvgIcon={DoubleCheckIcon} iconSize={38} label={'Double\nCheck'} onPress={() => router.push('/schedule')} />
-            <ActionItem SvgIcon={ScanMedicationIcon} iconSize={36} label={'Scan\nMedication'} onPress={() => router.push('/scanner')} />
-            <ActionItem SvgIcon={LowStockIcon} iconSize={34} label={'Low Stock'} onPress={() => openNotifications('stock')} />
-            <ActionItem SvgIcon={OrderIcon} iconSize={30} label={'Order'} onPress={() => router.push('/report')} />
+            <ActionItem SvgIcon={DoubleCheckIcon} label={'Double\nCheck'} onPress={() => router.push('/schedule')} />
+            <ActionItem SvgIcon={ScanMedicationIcon} label={'Scan\nMedication'} onPress={() => router.push('/scanner')} />
+            <ActionItem SvgIcon={LowStockIcon} label={'Low Stock'} onPress={() => openNotifications('stock')} />
+            <ActionItem SvgIcon={OrderIcon} label={'Order'} onPress={() => router.push('/report')} />
           </View>
 
           <Card className="bg-[#FFFDF9] shadow-sm mb-6">
@@ -604,24 +810,28 @@ export default function HomeScreen() {
         <View className="bg-white pt-6 pb-4">
           <View className="px-6">
             <View className="flex-row items-center mb-4">
-              <Text className="text-[18px] mr-2">💊</Text>
-              <Text className="text-[16px] font-semibold text-[#262321]">Patients to Dispense Medication</Text>
+              <Text className="text-[20px] mr-2">💊</Text>
+              <Text className="text-[16px] font-bold text-[#1E1C1A]">Patients to Dispense Medication</Text>
             </View>
 
             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
               <View className="flex-row">
-                <TouchableOpacity onPress={() => setSelectedWardFilter('all')} className={`rounded-[10px] px-4 py-2.5 mr-2 flex-row items-center ${selectedWardFilter === 'all' ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}>
-                  <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
-                  <Text className="text-[13px] text-[#1F1D1B] ml-2">All Wards</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setSelectedWardFilter('ward-a')} className={`rounded-[10px] px-4 py-2.5 mr-2 flex-row items-center ${selectedWardFilter === 'ward-a' ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}>
-                  <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
-                  <Text className="text-[13px] text-[#1F1D1B] ml-2">Ward A (Floor 1)</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setSelectedWardFilter('ward-b')} className={`rounded-[10px] px-4 py-2.5 flex-row items-center ${selectedWardFilter === 'ward-b' ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}>
-                  <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
-                  <Text className="text-[13px] text-[#1F1D1B] ml-2">Ward B</Text>
-                </TouchableOpacity>
+                {filterOptions.length > 1 ? (
+                  <TouchableOpacity onPress={() => setSelectedWardFilter('all')} className={`rounded-[10px] px-4 py-2.5 mr-2 flex-row items-center ${selectedWardFilter === 'all' ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}>
+                    <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
+                    <Text className="text-[13px] text-[#1F1D1B] ml-2">All Wards</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {filterOptions.map((option) => (
+                  <TouchableOpacity
+                    key={option.id}
+                    onPress={() => setSelectedWardFilter(option.id)}
+                    className={`rounded-[10px] px-4 py-2.5 mr-2 flex-row items-center ${selectedWardFilter === option.id || (selectedWardFilter === 'all' && filterOptions.length === 1) ? 'bg-[#F5A74F]' : 'bg-white border border-[#ECE4D9]'}`}
+                  >
+                    <Ionicons name="layers-outline" size={15} color="#1F1D1B" />
+                    <Text className="text-[13px] text-[#1F1D1B] ml-2">{option.label}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             </ScrollView>
 
@@ -641,5 +851,12 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+    <BottomNav
+      activeTab="home"
+      onHome={() => router.replace('/(tabs)')}
+      onWard={() => router.replace('/(tabs)/patients')}
+      onProfile={() => router.replace('/(tabs)/settings')}
+    />
+    </View>
   )
 }

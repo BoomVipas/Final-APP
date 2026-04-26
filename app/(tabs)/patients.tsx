@@ -4,14 +4,21 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { Dimensions, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { Tabs, useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useAuthStore } from '../../src/stores/authStore'
 import { usePatientStore } from '../../src/stores/patientStore'
 import { useMedicationStore } from '../../src/stores/medicationStore'
 import { Card } from '../../src/components/ui/Card'
+import WardpicIcon from '../../icons/Wardpic.svg'
+
+import { BottomNav } from '../../src/components/shared/BottomNav'
+import HospitalIcon from 'icons/HospitalIcon'
+
+const WARD_HEADER_ASPECT_RATIO = 393 / 163
 
 interface WardSummaryCard {
   id: string
@@ -49,10 +56,21 @@ function StatBox({
   label: string
 }) {
   return (
-    <View className="flex-1 min-h-[86px] rounded-[18px] bg-white border border-[#ECE5DB] px-4 py-4 justify-center">
+    <LinearGradient
+      colors={['#F1F1F1', '#FFFFFF']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={{ flex: 1, minHeight: 86, borderRadius: 18, borderWidth: 1, borderColor: '#ECE5DB', paddingHorizontal: 16, paddingVertical: 16, justifyContent: 'center' }}
+    >
       <Text className="text-[21px] leading-[24px] font-semibold text-[#33312F]">{value}</Text>
-      <Text className="text-[11px] leading-[15px] text-[#7D8798] mt-1">{label}</Text>
-    </View>
+      <Text
+        className="text-[10px] leading-[15px] text-[#7D8798] mt-1 text-center"
+        style={{ width: '100%' }}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </LinearGradient>
   )
 }
 
@@ -67,8 +85,8 @@ function WardCard({
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} className="mb-5">
       <Card className="bg-white shadow-sm px-4 py-4">
         <View className="flex-row items-start">
-          <View className="w-16 h-16 rounded-[14px] bg-[#FFF2E1] items-center justify-center mr-4">
-            <Ionicons name="business" size={28} color="#F2A24B" />
+          <View className="w-16 h-16 rounded-[14px] bg-[#FFF5E8] overflow-hidden mr-4 items-center justify-center">
+            <WardpicIcon width={40} height={40} />
           </View>
 
           <View className="flex-1 pr-8">
@@ -103,6 +121,7 @@ function WardCard({
     </TouchableOpacity>
   )
 }
+
 
 export default function PatientsScreen() {
   const router = useRouter()
@@ -161,34 +180,51 @@ export default function PatientsScreen() {
   const totalWards = visualFallback ? 4 : wardCards.length
 
   return (
-    <SafeAreaView className="flex-1 bg-[#FFF9F1]" edges={['left', 'right']}>
+    <View style={{ flex: 1, backgroundColor: '#FFF9F1' }}>
+      <Tabs.Screen options={{ tabBarStyle: { display: 'none' } }} />
+      <SafeAreaView className="flex-1" edges={['left', 'right']}>
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 8 }}
         refreshControl={<RefreshControl refreshing={refreshing || loading} onRefresh={onRefresh} tintColor="#F2A24B" />}
       >
-        <View className="bg-[#F8C27D] px-7 pt-8 pb-7 overflow-hidden">
-          <View className="absolute left-[-40] top-6 w-40 h-40 rounded-full bg-[#F7D8B0] opacity-30" />
-          <View className="absolute right-[-20] top-0 w-44 h-44 rounded-full bg-[#F9D9B0] opacity-60" />
-          <View className="absolute right-2 top-5 w-28 h-28 rounded-full bg-[#FFE6C8] opacity-60" />
-
-          <View className="flex-row items-center mt-8">
-            <Ionicons name="bed" size={30} color="#2D2B29" />
+        <View style={{ width: Dimensions.get('window').width, aspectRatio: WARD_HEADER_ASPECT_RATIO, overflow: 'hidden' }}>
+          <LinearGradient
+            colors={['#FFF8EF', '#F6D6B0', '#EFA85A']}
+            start={{ x: 0.08, y: 0.02 }}
+            end={{ x: 0.92, y: 1 }}
+            style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+          />
+          <View className="absolute left-0 top-6 bottom-10 w-[88px] border-r border-[#E6B982]/60" />
+          <View className="absolute right-0 top-8 bottom-10 w-[92px] border-l border-[#E6B982]/50" />
+          <View className="absolute left-[90px] right-[90px] top-12 bottom-8 bg-white/30" />
+          <View className="absolute bottom-6 left-7 flex-row items-center">
+            <HospitalIcon />
             <Text className="text-[28px] leading-[32px] font-bold text-[#2D2B29] ml-3">Ward</Text>
           </View>
         </View>
 
         <View className="px-5 -mt-3">
           <View className="flex-row gap-3 mb-6">
-            <View className="flex-1 rounded-[18px] bg-white border border-[#EDE4D8] px-4 py-4 shadow-sm items-center">
+            <LinearGradient
+              colors={['#F1F1F1', '#FFFFFF']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={{ flex: 1, borderRadius: 18, borderWidth: 1, borderColor: '#EDE4D8', paddingHorizontal: 16, paddingVertical: 16, alignItems: 'center' }}
+            >
               <Text className="text-[26px] leading-[30px] font-bold text-[#33312F]">{totalPatients}</Text>
               <Text className="text-[12px] text-[#7D8798] mt-1">Patients</Text>
-            </View>
-            <View className="flex-1 rounded-[18px] bg-white border border-[#EDE4D8] px-4 py-4 shadow-sm items-center">
+            </LinearGradient>
+            <LinearGradient
+              colors={['#F1F1F1', '#FFFFFF']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={{ flex: 1, borderRadius: 18, borderWidth: 1, borderColor: '#EDE4D8', paddingHorizontal: 16, paddingVertical: 16, alignItems: 'center' }}
+            >
               <Text className="text-[26px] leading-[30px] font-bold text-[#33312F]">{totalWards}</Text>
               <Text className="text-[12px] text-[#7D8798] mt-1">Ward</Text>
-            </View>
+            </LinearGradient>
           </View>
 
           {wardCards.map((ward) => (
@@ -201,5 +237,12 @@ export default function PatientsScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+    <BottomNav
+      activeTab="ward"
+      onHome={() => router.replace('/(tabs)')}
+      onWard={() => router.replace('/(tabs)/patients')}
+      onProfile={() => router.replace('/(tabs)/settings')}
+    />
+    </View>
   )
 }

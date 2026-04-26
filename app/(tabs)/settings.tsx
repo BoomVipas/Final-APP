@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from 'react'
 import {
   Alert,
+  Dimensions,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
-import { useRouter } from 'expo-router'
+import { Tabs, useRouter } from 'expo-router'
+import { BottomNav } from '../../src/components/shared/BottomNav'
 import { useIsFocused } from '@react-navigation/native'
 
 import { useAuthStore } from '../../src/stores/authStore'
@@ -30,6 +33,8 @@ const CARD_SHADOW = {
   shadowOffset: { width: 0, height: 10 },
   elevation: 5,
 }
+
+const SETTINGS_HEADER_ASPECT_RATIO = 393 / 205
 
 type MenuItemProps = {
   icon: React.ComponentProps<typeof Ionicons>['name']
@@ -62,6 +67,7 @@ async function fetchProfile(userId: string): Promise<UsersRow | null> {
 
   return (data as UsersRow | null) ?? null
 }
+
 
 export default function SettingsScreen() {
   const router = useRouter()
@@ -124,26 +130,20 @@ export default function SettingsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
+    <View style={{ flex: 1 }}>
+      <Tabs.Screen options={{ tabBarStyle: { display: 'none' } }} />
+      <SafeAreaView style={[styles.safeArea, { flex: 1 }]} edges={['left', 'right']}>
       <ScrollView
         style={styles.screen}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
         <LinearGradient
-          colors={['#FFF7ED', '#FDD8AB', '#F6A84C']}
-          start={{ x: 0, y: 0 }}
+          colors={['#FFF8EF', '#F5D4AD', '#EFA65B']}
+          start={{ x: 0.08, y: 0.02 }}
           end={{ x: 0.95, y: 1 }}
           style={styles.hero}
         >
-          <View style={styles.heroGlowLeft} />
-          <View style={styles.heroGlowRight} />
-          <View style={styles.heroIllustration}>
-            <View style={styles.heroIllustrationPanel} />
-            <View style={styles.heroIllustrationDesk} />
-            <Ionicons name="people-outline" size={38} color="rgba(59, 50, 45, 0.18)" />
-          </View>
-
           <View style={styles.heroRow}>
             <View style={styles.avatarOuter}>
               <LinearGradient
@@ -216,6 +216,13 @@ export default function SettingsScreen() {
         <Text style={styles.versionText}>Version 1.1.2</Text>
       </ScrollView>
     </SafeAreaView>
+    <BottomNav
+      activeTab="profile"
+      onHome={() => router.replace('/(tabs)')}
+      onWard={() => router.replace('/(tabs)/patients')}
+      onProfile={() => router.replace('/(tabs)/settings')}
+    />
+    </View>
   )
 }
 
@@ -232,7 +239,8 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   hero: {
-    minHeight: 220,
+    width: Dimensions.get('window').width,
+    aspectRatio: SETTINGS_HEADER_ASPECT_RATIO,
     paddingHorizontal: 18,
     paddingTop: 30,
     paddingBottom: 20,
