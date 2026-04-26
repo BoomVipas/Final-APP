@@ -22,6 +22,14 @@ import { useMedicationStore, type ScheduleGroup, type ScheduleItem } from '../..
 import { MedicationCard } from '../../src/components/shared/MedicationCard'
 import { Button } from '../../src/components/ui/Button'
 import { Card } from '../../src/components/ui/Card'
+import type { MedicationLogsRow } from '../../src/types/database'
+
+function formatTimeBilingual(iso: string): { th: string; en: string } {
+  const date = new Date(iso)
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mm = String(date.getMinutes()).padStart(2, '0')
+  return { th: `${hh}:${mm}`, en: `${hh}:${mm}` }
+}
 
 type AdminMethod = 'normal' | 'crushed' | 'feeding_tube'
 
@@ -119,23 +127,103 @@ function ConfirmBottomSheet({
   )
 }
 
-function DuplicateModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+function DuplicateConfirmSheet({
+  visible,
+  item,
+  conflictingLog,
+  submitting,
+  onCancel,
+  onForce,
+}: {
+  visible: boolean
+  item: ScheduleItem | null
+  conflictingLog: MedicationLogsRow | null
+  submitting: boolean
+  onCancel: () => void
+  onForce: () => void
+}) {
+  const lastLogged = conflictingLog ? formatTimeBilingual(conflictingLog.administered_at) : null
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View className="flex-1 bg-black/40 items-center justify-center px-6">
-        <View className="bg-[#FFF9F2] border border-[#F2C7C3] rounded-[28px] p-6 w-full">
-          <Text className="text-xs font-semibold uppercase tracking-[1px] text-[#A3322A] text-center">
-            Duplicate Guard
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+      <Pressable className="flex-1 bg-black/40" onPress={onCancel}>
+        <View className="flex-1" />
+        <Pressable
+          onPress={() => {}}
+          className="bg-[#FFF5E8] rounded-t-[32px] px-5 pt-5 pb-7 border-t border-[#EFE4D5]"
+        >
+          <View className="items-center mb-3">
+            <View className="w-14 h-14 rounded-full bg-[#FFE6CE] items-center justify-center">
+              <Ionicons name="warning" size={30} color="#F2A24B" />
+            </View>
+          </View>
+
+          <Text className="text-xs font-semibold uppercase tracking-[1px] text-[#F2A24B] text-center">
+            แจ้งเตือนยาซ้ำ / Duplicate Dose
           </Text>
-          <Text className="text-lg font-bold text-[#2E241B] text-center mt-2">
-            Duplicate Dose Detected
+          <Text className="text-xl font-bold text-[#2E2C2A] text-center mt-2">
+            ยานี้ถูกบันทึกไปแล้ว
           </Text>
-          <Text className="text-sm text-[#6F6254] text-center mt-2 mb-5">
-            This confirmation was blocked to prevent giving the same medication twice in this time slot.
+          <Text className="text-sm font-semibold text-[#2E2C2A] text-center">
+            This medication has already been logged
           </Text>
-          <Button title="Understood" onPress={onClose} variant="danger" />
-        </View>
-      </View>
+
+          {item ? (
+            <View className="bg-white/60 border border-[#EFE4D5] rounded-[20px] p-4 mt-4">
+              <Text className="text-[11px] font-semibold uppercase tracking-[1px] text-[#97928B]">
+                ผู้ป่วย / Patient
+              </Text>
+              <Text className="text-base font-bold text-[#2E2C2A] mt-1">
+                {item.patient_name}
+              </Text>
+              {item.room_number ? (
+                <Text className="text-xs text-[#97928B] mt-0.5">
+                  ห้อง / Room {item.room_number}
+                </Text>
+              ) : null}
+
+              <Text className="text-[11px] font-semibold uppercase tracking-[1px] text-[#97928B] mt-3">
+                ยา / Medication
+              </Text>
+              <Text className="text-base font-bold text-[#2E2C2A] mt-1">
+                {item.medicine_name}
+                {item.medicine_strength ? ` ${item.medicine_strength}` : ''}
+              </Text>
+
+              {lastLogged ? (
+                <>
+                  <Text className="text-[11px] font-semibold uppercase tracking-[1px] text-[#97928B] mt-3">
+                    บันทึกล่าสุด / Last logged
+                  </Text>
+                  <Text className="text-base font-bold text-[#F2A24B] mt-1">
+                    {lastLogged.th} น. / {lastLogged.en}
+                  </Text>
+                </>
+              ) : null}
+            </View>
+          ) : null}
+
+          <Text className="text-xs text-[#97928B] text-center mt-4 mb-4">
+            ยืนยันอีกครั้งเฉพาะกรณีที่จำเป็นเท่านั้น{'\n'}
+            Only confirm again if you are sure this is a separate dose.
+          </Text>
+
+          <Button
+            title="ยกเลิก / Cancel"
+            onPress={onCancel}
+            variant="secondary"
+            disabled={submitting}
+          />
+          <Button
+            title="บันทึกอยู่ดี / Log anyway"
+            onPress={onForce}
+            variant="primary"
+            loading={submitting}
+            disabled={submitting}
+            className="mt-2"
+          />
+        </Pressable>
+      </Pressable>
     </Modal>
   )
 }
@@ -194,12 +282,14 @@ function PeriodSection({
 export default function ScheduleScreen() {
   const router = useRouter()
   const { user } = useAuthStore()
-  const { scheduleGroups, fetchSchedule, confirmDose, subscribeToRealtime } = useMedicationStore()
+  const { scheduleGroups, fetchSchedule, confirmDose, checkDuplicate, subscribeToRealtime } = useMedicationStore()
 
   const [currentDate, setCurrentDate] = useState(new Date())
   const [refreshing, setRefreshing] = useState(false)
   const [confirmItem, setConfirmItem] = useState<ScheduleItem | null>(null)
-  const [showDuplicate, setShowDuplicate] = useState(false)
+  const [duplicateItem, setDuplicateItem] = useState<ScheduleItem | null>(null)
+  const [duplicateLog, setDuplicateLog] = useState<MedicationLogsRow | null>(null)
+  const [duplicateSubmitting, setDuplicateSubmitting] = useState(false)
   const [loadingDate, setLoadingDate] = useState(false)
 
   const wardId = user?.ward_id ?? ''
@@ -232,23 +322,43 @@ export default function ScheduleScreen() {
   }
 
   const handleConfirmPress = (item: ScheduleItem) => {
-    if (item.conflict_flag) {
-      setShowDuplicate(true)
-      return
-    }
     setConfirmItem(item)
   }
 
-  const handleConfirmSubmit = async (item: ScheduleItem, _method: AdminMethod) => {
+  const handleConfirmSubmit = async (item: ScheduleItem, method: AdminMethod) => {
     if (!user) return
 
+    const dup = await checkDuplicate(item)
+    if (dup.isDuplicate) {
+      setConfirmItem(null)
+      setDuplicateItem(item)
+      setDuplicateLog(dup.conflictingLog ?? null)
+      return
+    }
+
     try {
-      await confirmDose({ ...item }, user.id)
+      await confirmDose(item, user.id, { method })
       setConfirmItem(null)
       await loadSchedule()
     } catch {
       setConfirmItem(null)
-      setShowDuplicate(true)
+    }
+  }
+
+  const closeDuplicateSheet = () => {
+    setDuplicateItem(null)
+    setDuplicateLog(null)
+  }
+
+  const handleForceConfirm = async () => {
+    if (!user || !duplicateItem) return
+    setDuplicateSubmitting(true)
+    try {
+      await confirmDose(duplicateItem, user.id, { force: true })
+      closeDuplicateSheet()
+      await loadSchedule()
+    } finally {
+      setDuplicateSubmitting(false)
     }
   }
 
@@ -350,7 +460,14 @@ export default function ScheduleScreen() {
         onClose={() => setConfirmItem(null)}
         onSubmit={handleConfirmSubmit}
       />
-      <DuplicateModal visible={showDuplicate} onClose={() => setShowDuplicate(false)} />
+      <DuplicateConfirmSheet
+        visible={!!duplicateItem}
+        item={duplicateItem}
+        conflictingLog={duplicateLog}
+        submitting={duplicateSubmitting}
+        onCancel={closeDuplicateSheet}
+        onForce={handleForceConfirm}
+      />
     </SafeAreaView>
   )
 }

@@ -5,8 +5,11 @@
 
 import type { UsersRow } from '../types/database'
 
-// Temporary: keep the product accessible without a login wall during build-out.
-export const AUTH_BYPASS_ENABLED = true
+const AUTH_BYPASS_FLAG = true
+
+// __DEV__ gate ensures the bypass is impossible to ship in a production bundle,
+// even if AUTH_BYPASS_FLAG is accidentally left as `true`.
+export const isDevAuthBypassActive: boolean = __DEV__ && AUTH_BYPASS_FLAG
 
 export const DEV_BYPASS_USER: UsersRow = {
   id: '00000000-0000-0000-0000-00000000d001',

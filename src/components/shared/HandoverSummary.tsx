@@ -4,11 +4,18 @@
  */
 
 import React from 'react'
-import { ScrollView, Text, View } from 'react-native'
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import type { ShiftHandoversRow } from '../../types/database'
 
 interface HandoverSummaryProps {
   handover: ShiftHandoversRow
+  deferredKeys?: Set<string>
+  onToggleDefer?: (key: string) => void
+}
+
+export function pendingItemKey(item: { patient_name?: string; medication_name?: string; meal_period?: string | null }, idx: number): string {
+  return `${item.patient_name ?? '?'}::${item.medication_name ?? '?'}::${item.meal_period ?? ''}::${idx}`
 }
 
 interface PendingMedItem {
@@ -42,17 +49,60 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function PendingMedRow({ item }: { item: PendingMedItem }) {
+function PendingMedRow({
+  item,
+  deferred,
+  onToggleDefer,
+}: {
+  item: PendingMedItem
+  deferred?: boolean
+  onToggleDefer?: () => void
+}) {
+  const showDeferControl = typeof onToggleDefer === 'function'
   return (
-    <View className="bg-[#FFF3F1] border border-[#F2C7C3] rounded-[22px] p-3 mb-2">
-      <Text className="text-sm font-semibold text-[#A3322A]">
-        {item.patient_name ?? 'ไม่ทราบชื่อ'}
-        {item.room_bed ? `  •  ห้อง ${item.room_bed}` : ''}
-      </Text>
-      <Text className="text-xs text-[#7A3A35] mt-1">
-        {item.medication_name ?? '-'}
-        {item.meal_period ? `  •  ${item.meal_period}` : ''}
-      </Text>
+    <View
+      className={`rounded-[22px] p-3 mb-2 border ${
+        deferred ? 'bg-[#FFF7E7] border-[#EBCF99]' : 'bg-[#FFF3F1] border-[#F2C7C3]'
+      }`}
+    >
+      <View className="flex-row items-start justify-between">
+        <View className="flex-1 pr-2">
+          <Text className={`text-sm font-semibold ${deferred ? 'text-[#8E4B14]' : 'text-[#A3322A]'}`}>
+            {item.patient_name ?? 'ไม่ทราบชื่อ'}
+            {item.room_bed ? `  •  ห้อง ${item.room_bed}` : ''}
+          </Text>
+          <Text className={`text-xs mt-1 ${deferred ? 'text-[#A45A11]' : 'text-[#7A3A35]'}`}>
+            {item.medication_name ?? '-'}
+            {item.meal_period ? `  •  ${item.meal_period}` : ''}
+          </Text>
+        </View>
+        {showDeferControl ? (
+          <TouchableOpacity
+            onPress={onToggleDefer}
+            activeOpacity={0.85}
+            className={`flex-row items-center rounded-full px-2.5 py-1.5 border ${
+              deferred ? 'bg-[#FFE6CC] border-[#C96B1A]' : 'bg-white border-[#D6C5B2]'
+            }`}
+            style={{ minHeight: 28 }}
+          >
+            <Ionicons
+              name={deferred ? 'time' : 'time-outline'}
+              size={13}
+              color={deferred ? '#8E4B14' : '#7D6E60'}
+            />
+            <Text
+              className={`text-[10px] font-semibold ml-1 ${deferred ? 'text-[#8E4B14]' : 'text-[#7D6E60]'}`}
+            >
+              {deferred ? 'Deferred' : 'Defer'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {deferred ? (
+        <Text className="text-[11px] text-[#A45A11] mt-2 italic">
+          ⏭ ส่งต่อให้กะถัดไป / Will carry over to next shift
+        </Text>
+      ) : null}
     </View>
   )
 }
@@ -101,7 +151,7 @@ function PRNRow({ item }: { item: PRNItem }) {
   )
 }
 
-export function HandoverSummary({ handover }: HandoverSummaryProps) {
+export function HandoverSummary({ handover, deferredKeys, onToggleDefer }: HandoverSummaryProps) {
   const summary = handover.summary_json as Record<string, unknown>
 
   const pendingMeds = (summary?.pending_medications as PendingMedItem[] | undefined) ?? []
@@ -129,9 +179,17 @@ export function HandoverSummary({ handover }: HandoverSummaryProps) {
 
       {pendingMeds.length > 0 && (
         <Section title={`🔴 ยาที่ยังไม่ได้จ่าย (${pendingMeds.length} รายการ)`}>
-          {pendingMeds.map((item, idx) => (
-            <PendingMedRow key={idx} item={item} />
-          ))}
+          {pendingMeds.map((item, idx) => {
+            const key = pendingItemKey(item, idx)
+            return (
+              <PendingMedRow
+                key={key}
+                item={item}
+                deferred={deferredKeys?.has(key) ?? false}
+                onToggleDefer={onToggleDefer ? () => onToggleDefer(key) : undefined}
+              />
+            )
+          })}
         </Section>
       )}
 

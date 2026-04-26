@@ -20,6 +20,9 @@ import { useAuthStore } from '../../src/stores/authStore'
 import { usePatientStore } from '../../src/stores/patientStore'
 import { useMedicationStore } from '../../src/stores/medicationStore'
 import { useNotificationStore } from '../../src/stores/notificationStore'
+import { useHandoverStore } from '../../src/stores/handoverStore'
+import { USE_MOCK, MOCK_HANDOVER } from '../../src/mocks'
+import type { ShiftHandoversRow } from '../../src/types/database'
 import { Card } from '../../src/components/ui/Card'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
 import { supabase } from '../../src/lib/supabase'
@@ -373,6 +376,7 @@ export default function HomeScreen() {
   const { patients, fetchPatients } = usePatientStore()
   const { scheduleGroups, pendingCount, completedCount, fetchSchedule } = useMedicationStore()
   const { activeAlerts, fetchNotifications } = useNotificationStore()
+  const { pending: pendingHandover, fetchPending, setPending } = useHandoverStore()
   const [refreshing, setRefreshing] = useState(false)
   const [alertsExpanded, setAlertsExpanded] = useState(true)
   const [selectedWardFilter, setSelectedWardFilter] = useState('all')
@@ -449,13 +453,18 @@ export default function HomeScreen() {
 
   const loadData = useCallback(async () => {
     if (!user) return
+    if (USE_MOCK) {
+      setPending(MOCK_HANDOVER as unknown as ShiftHandoversRow)
+    } else if (wardScope) {
+      fetchPending(wardScope)
+    }
     await Promise.all([
       fetchPatients(wardScope),
       fetchSchedule(wardScope, todayStr),
       fetchWardOptions(wardScope),
       user ? fetchNotifications(user.id) : Promise.resolve(),
     ])
-  }, [fetchNotifications, fetchPatients, fetchSchedule, fetchWardOptions, todayStr, user, wardScope])
+  }, [fetchNotifications, fetchPatients, fetchPending, fetchSchedule, fetchWardOptions, setPending, todayStr, user, wardScope])
 
   useEffect(() => {
     loadData()
@@ -772,6 +781,59 @@ export default function HomeScreen() {
             </LinearGradient>
           </View>
         </LinearGradient>
+
+        {pendingHandover ? (
+          <View className="px-4 pt-4">
+            <TouchableOpacity
+              onPress={() => router.push('/handover')}
+              activeOpacity={0.9}
+              style={{
+                flexDirection: 'row',
+                backgroundColor: '#FFFFFF',
+                borderRadius: 16,
+                overflow: 'hidden',
+                borderWidth: 1,
+                borderColor: '#EADBCB',
+                shadowColor: '#000',
+                shadowOpacity: 0.06,
+                shadowRadius: 10,
+                shadowOffset: { width: 0, height: 3 },
+                elevation: 2,
+              }}
+            >
+              <View style={{ width: 6, backgroundColor: '#C96B1A' }} />
+              <View style={{ flex: 1, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFE6CC', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                  <Ionicons name="swap-horizontal" size={22} color="#8E4B14" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#8E4B14', letterSpacing: 1, textTransform: 'uppercase' }}>
+                    {(() => {
+                      const hour = new Date(pendingHandover.shift_start).getHours()
+                      if (hour >= 6 && hour < 14) return 'เวรเช้า / Morning shift'
+                      if (hour >= 14 && hour < 22) return 'เวรบ่าย / Afternoon shift'
+                      return 'เวรดึก / Night shift'
+                    })()}
+                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#2E241B', marginTop: 2 }}>
+                    ยืนยันการรับเวร / Acknowledge handover
+                  </Text>
+                  {(() => {
+                    const summary = pendingHandover.summary_json as Record<string, unknown> | undefined
+                    const pending = (summary?.pending_medications as unknown[] | undefined)?.length ?? 0
+                    if (pending === 0) return null
+                    return (
+                      <Text style={{ fontSize: 12, color: '#A3322A', marginTop: 4 }}>
+                        🔴 {pending} ยาค้าง / pending dose{pending > 1 ? 's' : ''}
+                      </Text>
+                    )
+                  })()}
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#8E4B14" />
+              </View>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         <View className="px-6 pt-6">
           <View className="flex-row justify-between mb-6">

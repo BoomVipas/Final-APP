@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -495,6 +496,25 @@ function MedicationCard({ medication }: { medication: DisplayMedication }) {
   const warningColor = medication.warningTone === 'critical' ? '#EF5D5D' : '#F3A24D'
   const warningIcon = medication.warningTone === 'critical' ? 'alert-circle' : 'warning'
 
+  const showMedicationActions = () => {
+    Alert.alert(medication.medicineName, 'Choose an action for this medication.', [
+      { text: 'View schedule', onPress: () => {} },
+      { text: 'Mark as dispensed', onPress: () => {} },
+      { text: 'Cancel', style: 'cancel' },
+    ])
+  }
+
+  const handleSetReminder = () => {
+    Alert.alert(
+      'Set reminder',
+      `Notify ${medication.daysLeft ?? 0} day(s) before ${medication.medicineName} runs out?`,
+      [
+        { text: 'Confirm', onPress: () => {} },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    )
+  }
+
   return (
     <View
       style={{
@@ -545,9 +565,12 @@ function MedicationCard({ medication }: { medication: DisplayMedication }) {
 
         <TouchableOpacity
           accessibilityRole="button"
+          accessibilityLabel={`Actions for ${medication.medicineName}`}
+          onPress={showMedicationActions}
+          hitSlop={8}
           style={{
-            minWidth: 32,
-            minHeight: 32,
+            minWidth: 48,
+            minHeight: 48,
             alignItems: 'center',
             justifyContent: 'center',
             marginTop: -2,
@@ -612,15 +635,18 @@ function MedicationCard({ medication }: { medication: DisplayMedication }) {
           </View>
 
           <TouchableOpacity
+            accessibilityRole="button"
+            onPress={handleSetReminder}
+            hitSlop={8}
             style={{
-              minHeight: 36,
+              minHeight: 48,
               borderRadius: 10,
               borderWidth: 1,
               borderColor: '#E5E3DE',
               backgroundColor: '#FFFFFF',
               alignItems: 'center',
               justifyContent: 'center',
-              paddingHorizontal: 10,
+              paddingHorizontal: 14,
             }}
           >
             <Text style={{ fontSize: 12, fontWeight: '600', color: '#3A3938' }}>Set Reminder</Text>
@@ -1172,6 +1198,32 @@ export default function PatientDetailScreen() {
             backgroundColor: '#F7F2EA',
           }}
         >
+          <TouchableOpacity
+            onPress={() => {
+              if (!patientId) return
+              router.push({
+                pathname: '/dispense-fill/load/[patientId]',
+                params: { patientId, patientName },
+              })
+            }}
+            style={{
+              minHeight: 46,
+              borderRadius: 999,
+              backgroundColor: '#FFFFFF',
+              borderWidth: 1.5,
+              borderColor: '#F6AA4D',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'row',
+              marginBottom: 10,
+            }}
+          >
+            <Ionicons name="cube-outline" size={16} color="#C96B1A" />
+            <Text style={{ fontSize: 14, lineHeight: 20, fontWeight: '600', color: '#C96B1A', marginLeft: 6 }}>
+              Weekly Fill — load cabinet
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             onPress={() => {
               if (!patientId) return

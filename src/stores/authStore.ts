@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { UsersRow } from '../types/database'
-import { AUTH_BYPASS_ENABLED, DEV_BYPASS_USER } from '../lib/devAuth'
+import { isDevAuthBypassActive, DEV_BYPASS_USER } from '../lib/devAuth'
 
 interface AuthState {
   user: UsersRow | null
@@ -15,6 +15,7 @@ interface AuthState {
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  resetPassword: (email: string) => Promise<void>
   initialize: () => void
 }
 
@@ -56,7 +57,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   loading: true,
 
   signIn: async (email: string, password: string) => {
-    if (AUTH_BYPASS_ENABLED) {
+    if (isDevAuthBypassActive) {
       const user = await ensureBypassUser()
       set({ user, session: null, loading: false })
       return
@@ -72,8 +73,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ user, session: data.session })
   },
 
+  resetPassword: async (email: string) => {
+    if (isDevAuthBypassActive) return
+    const { error } = await supabase.auth.resetPasswordForEmail(email)
+    if (error) throw error
+  },
+
   signOut: async () => {
-    if (AUTH_BYPASS_ENABLED) {
+    if (isDevAuthBypassActive) {
       const user = await ensureBypassUser()
       set({ user, session: null, loading: false })
       return
@@ -85,7 +92,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   initialize: () => {
-    if (AUTH_BYPASS_ENABLED) {
+    if (isDevAuthBypassActive) {
       ensureBypassUser()
         .then((user) => {
           set({ user, session: null, loading: false })

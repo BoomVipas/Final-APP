@@ -8,6 +8,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   Text,
   TextInput,
   View,
@@ -18,25 +19,68 @@ import { Button } from '../src/components/ui/Button'
 import { USE_MOCK } from '../src/mocks'
 
 export default function LoginScreen() {
-  const { signIn } = useAuthStore()
+  const { signIn, resetPassword } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [loginError, setLoginError] = useState<string | null>(null)
+  const [resetMessage, setResetMessage] = useState<string | null>(null)
+  const [resetting, setResetting] = useState(false)
+
+  const handleEmailChange = (value: string) => {
+    setEmail(value)
+    if (emailError) setEmailError(null)
+    if (loginError) setLoginError(null)
+    if (resetMessage) setResetMessage(null)
+  }
+
+  const handlePasswordChange = (value: string) => {
+    setPassword(value)
+    if (loginError) setLoginError(null)
+  }
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('กรุณากรอกข้อมูล', 'ต้องระบุอีเมลและรหัสผ่าน')
+      setLoginError('กรุณากรอกอีเมลและรหัสผ่าน / Please enter email and password')
       return
     }
 
     setLoading(true)
+    setLoginError(null)
     try {
       await signIn(email.trim(), password)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'เข้าสู่ระบบไม่สำเร็จ'
-      Alert.alert('เข้าสู่ระบบไม่สำเร็จ', message)
+      const raw = err instanceof Error ? err.message : ''
+      const isInvalidCreds = /invalid login credentials|invalid email or password/i.test(raw)
+      const message = isInvalidCreds || !raw
+        ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง / Invalid email or password'
+        : raw
+      setLoginError(message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleForgotPassword = async () => {
+    setResetMessage(null)
+    setLoginError(null)
+    if (!email.trim()) {
+      setEmailError('กรุณากรอกอีเมลก่อน / Please enter your email first')
+      return
+    }
+    setEmailError(null)
+    setResetting(true)
+    try {
+      await resetPassword(email.trim())
+      setResetMessage('ลิงก์รีเซ็ตรหัสผ่านส่งไปที่อีเมลแล้ว / Reset link sent to your email')
+    } catch (err) {
+      const message = err instanceof Error
+        ? err.message
+        : 'ส่งลิงก์รีเซ็ตไม่สำเร็จ / Failed to send reset link'
+      Alert.alert('รีเซ็ตรหัสผ่านไม่สำเร็จ / Reset failed', message)
+    } finally {
+      setResetting(false)
     }
   }
 
@@ -81,10 +125,10 @@ export default function LoginScreen() {
             </View>
 
             <View className="mb-4">
-              <Text className="text-sm font-semibold text-[#5E5145] mb-2">อีเมล</Text>
+              <Text className="text-sm font-semibold text-[#5E5145] mb-2">อีเมล / Email</Text>
               <TextInput
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={handleEmailChange}
                 placeholder="nurse@hospital.th"
                 placeholderTextColor="#A79A8D"
                 keyboardType="email-address"
@@ -92,19 +136,43 @@ export default function LoginScreen() {
                 autoComplete="email"
                 className="bg-[#F7F1E8] border border-[#E7D8C7] rounded-[22px] px-4 min-h-[54px] text-sm text-[#2E241B]"
               />
+              {emailError ? (
+                <Text className="text-xs text-[#FF6A63] mt-2 ml-1">{emailError}</Text>
+              ) : null}
             </View>
 
-            <View className="mb-3">
-              <Text className="text-sm font-semibold text-[#5E5145] mb-2">รหัสผ่าน</Text>
+            <View className="mb-1">
+              <Text className="text-sm font-semibold text-[#5E5145] mb-2">รหัสผ่าน / Password</Text>
               <TextInput
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={handlePasswordChange}
                 placeholder="••••••••"
                 placeholderTextColor="#A79A8D"
                 secureTextEntry
                 autoComplete="password"
                 className="bg-[#F7F1E8] border border-[#E7D8C7] rounded-[22px] px-4 min-h-[54px] text-sm text-[#2E241B]"
               />
+              {loginError ? (
+                <Text className="text-xs text-[#FF6A63] mt-2 ml-1">{loginError}</Text>
+              ) : null}
+              {resetMessage ? (
+                <Text className="text-xs text-[#8E4B14] mt-2 ml-1">{resetMessage}</Text>
+              ) : null}
+            </View>
+
+            <View className="flex-row justify-end mb-3">
+              <Pressable
+                onPress={handleForgotPassword}
+                disabled={resetting}
+                hitSlop={12}
+                className="min-h-[48px] justify-center px-2"
+              >
+                <Text className="text-xs font-semibold text-[#F2A24B]">
+                  {resetting
+                    ? 'กำลังส่ง... / Sending...'
+                    : 'ลืมรหัสผ่าน? / Forgot Password?'}
+                </Text>
+              </Pressable>
             </View>
 
             <Text className="text-xs text-[#8C8174] mb-5">

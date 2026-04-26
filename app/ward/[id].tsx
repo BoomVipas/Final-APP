@@ -305,9 +305,11 @@ function InternalTab({
 function PatientRow({
   card,
   onPress,
+  onMore,
 }: {
   card: WardPatientCard
   onPress: () => void
+  onMore: () => void
 }) {
   return (
     <TouchableOpacity
@@ -345,7 +347,13 @@ function PatientRow({
         ) : null}
       </View>
 
-      <TouchableOpacity className="w-8 h-8 items-center justify-center mt-0.5">
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Actions for ${card.name}`}
+        onPress={onMore}
+        hitSlop={10}
+        className="w-12 h-12 items-center justify-center -mt-1 -mr-1"
+      >
         <Ionicons name="ellipsis-vertical" size={18} color="#4A4A4A" />
       </TouchableOpacity>
     </TouchableOpacity>
@@ -1214,6 +1222,14 @@ export default function WardDetailScreen() {
                     card={card}
                     onPress={() => {
                       if (!card.isFallback) router.push(`/patient/${card.id}`)
+                    }}
+                    onMore={() => {
+                      if (card.isFallback) return
+                      Alert.alert(card.name, 'Choose an action for this patient.', [
+                        { text: 'View profile', onPress: () => router.push(`/patient/${card.id}`) },
+                        { text: 'Mark as dispensed', onPress: () => {} },
+                        { text: 'Cancel', style: 'cancel' },
+                      ])
                     }}
                   />
                 ))

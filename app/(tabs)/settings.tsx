@@ -17,8 +17,11 @@ import { BottomNav } from '../../src/components/shared/BottomNav'
 import { useIsFocused } from '@react-navigation/native'
 
 import { useAuthStore } from '../../src/stores/authStore'
+import { useHandoverStore } from '../../src/stores/handoverStore'
 import { supabase } from '../../src/lib/supabase'
 import type { UserRole, UsersRow } from '../../src/types/database'
+import { USE_MOCK, MOCK_HANDOVER } from '../../src/mocks'
+import type { ShiftHandoversRow } from '../../src/types/database'
 
 const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Administrator',
@@ -129,6 +132,56 @@ export default function SettingsScreen() {
     router.push('/notifications')
   }
 
+  const { startHandover, setPending } = useHandoverStore()
+  const [startingHandover, setStartingHandover] = useState(false)
+
+  const handleStartHandover = async () => {
+    if (startingHandover) return
+    Alert.alert(
+      'Start Handover',
+      'สร้างสรุปกะใหม่สำหรับวอร์ดนี้?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Start',
+          onPress: async () => {
+            setStartingHandover(true)
+            try {
+              if (USE_MOCK) {
+                setPending(MOCK_HANDOVER as unknown as ShiftHandoversRow)
+                router.push('/handover')
+                return
+              }
+              const wardId = currentProfile?.ward_id
+              const caregiverId = currentProfile?.id
+              if (!wardId || !caregiverId) {
+                Alert.alert('ไม่สามารถเริ่มได้', 'ไม่พบข้อมูลวอร์ด')
+                return
+              }
+              const now = new Date()
+              const shiftStart = new Date(now.getTime() - 8 * 60 * 60 * 1000).toISOString()
+              const shiftEnd = now.toISOString()
+              const row = await startHandover({
+                wardId,
+                caregiverId,
+                shiftStart,
+                shiftEnd,
+                summaryJson: { pending_medications: [], prescription_changes: [], prn_medications: [], alerts: [] },
+              })
+              if (row) {
+                router.push('/handover')
+              } else {
+                Alert.alert('เกิดข้อผิดพลาด', 'ไม่สามารถสร้างสรุปกะได้')
+              }
+            } finally {
+              setStartingHandover(false)
+            }
+          },
+        },
+      ],
+    )
+  }
+
   return (
     <View style={{ flex: 1 }}>
       <Tabs.Screen options={{ tabBarStyle: { display: 'none' } }} />
@@ -187,6 +240,18 @@ export default function SettingsScreen() {
               <View style={styles.divider} />
             </>
           ) : null}
+          <MenuItem
+            icon="swap-horizontal"
+            label="Start Handover"
+            onPress={handleStartHandover}
+          />
+          <View style={styles.divider} />
+          <MenuItem
+            icon="time"
+            label="Handover History"
+            onPress={() => router.push('/handover-history')}
+          />
+          <View style={styles.divider} />
           <MenuItem
             icon="notifications"
             label="Notifications"
