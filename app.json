@@ -14,7 +14,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "th.ac.saensuk.pillo"
+      "bundleIdentifier": "th.ac.saensuk.pillo",
+      "usesAppleSignIn": true
     },
     "android": {
       "adaptiveIcon": {
@@ -36,6 +37,13 @@
         "expo-camera",
         {
           "cameraPermission": "PILLo ต้องการสิทธิ์เข้าถึงกล้องเพื่อสแกนฉลากยา"
+        }
+      ],
+      "expo-web-browser",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "PILLo ต้องการเข้าถึงไมโครโฟนเพื่อรับฟังคำถามของคุณ / PILLo needs microphone access to listen to your voice questions."
         }
       ]
     ]

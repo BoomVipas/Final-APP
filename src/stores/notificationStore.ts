@@ -24,10 +24,13 @@ interface NotificationState {
   loading: boolean
   error: string | null
   fetchNotifications: (caregiverId: string) => Promise<void>
+  markAsRead: (id: string) => Promise<void>
+  markAllAsRead: (caregiverId: string) => Promise<void>
+  dismissNotification: (id: string) => Promise<void>
   clearError: () => void
 }
 
-export const useNotificationStore = create<NotificationState>((set) => ({
+export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
   unreadCount: 0,
   activeAlerts: [],
@@ -72,6 +75,63 @@ export const useNotificationStore = create<NotificationState>((set) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการโหลดการแจ้งเตือน'
       set({ error: message, loading: false })
+    }
+  },
+
+  markAsRead: async (id: string) => {
+    const before = get().notifications
+    const target = before.find((n) => n.id === id)
+    if (!target || target.status !== 'sent') return
+
+    const next = before.map((n) => (n.id === id ? { ...n, status: 'delivered' as const } : n))
+    set({ notifications: next, unreadCount: next.filter((n) => n.status === 'sent').length })
+
+    const { error } = await supabase
+      .from('notification_logs')
+      .update({ status: 'delivered' })
+      .eq('id', id)
+
+    if (error) {
+      set({ notifications: before, unreadCount: before.filter((n) => n.status === 'sent').length, error: error.message })
+    }
+  },
+
+  markAllAsRead: async (caregiverId: string) => {
+    const before = get().notifications
+    const next = before.map((n) => (n.status === 'sent' ? { ...n, status: 'delivered' as const } : n))
+    set({ notifications: next, unreadCount: 0 })
+
+    const { error } = await supabase
+      .from('notification_logs')
+      .update({ status: 'delivered' })
+      .eq('recipient_type', 'caregiver')
+      .eq('recipient_id', caregiverId)
+      .eq('status', 'sent')
+
+    if (error) {
+      set({ notifications: before, unreadCount: before.filter((n) => n.status === 'sent').length, error: error.message })
+    }
+  },
+
+  dismissNotification: async (id: string) => {
+    const before = get().notifications
+    const beforeAlerts = get().activeAlerts
+    const next = before.filter((n) => n.id !== id)
+    set({
+      notifications: next,
+      unreadCount: next.filter((n) => n.status === 'sent').length,
+      activeAlerts: beforeAlerts.filter((a) => a.id !== id),
+    })
+
+    const { error } = await supabase.from('notification_logs').delete().eq('id', id)
+
+    if (error) {
+      set({
+        notifications: before,
+        unreadCount: before.filter((n) => n.status === 'sent').length,
+        activeAlerts: beforeAlerts,
+        error: error.message,
+      })
     }
   },
 

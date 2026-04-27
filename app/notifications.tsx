@@ -49,7 +49,9 @@ function AlertRow({
   dateLabel,
   icon,
   tone,
+  unread,
   onPress,
+  onDismiss,
 }: {
   title: string
   body: string
@@ -57,7 +59,9 @@ function AlertRow({
   dateLabel: string
   icon: React.ComponentProps<typeof Ionicons>['name']
   tone: 'critical' | 'warning' | 'info'
+  unread?: boolean
   onPress: () => void
+  onDismiss?: () => void
 }) {
   const toneColor =
     tone === 'critical' ? '#F26666' : tone === 'warning' ? '#F0A13C' : '#4F85E5'
@@ -75,6 +79,7 @@ function AlertRow({
         shadowRadius: 14,
         shadowOffset: { width: 0, height: 10 },
         elevation: 4,
+        opacity: unread ? 1 : 0.78,
       }}
     >
       <View className="flex-row items-start">
@@ -87,13 +92,56 @@ function AlertRow({
 
         <View className="flex-1 pr-2">
           <View className="flex-row items-start justify-between">
-            <Text className="text-[15px] font-semibold text-[#2F2B28] flex-1 pr-2">{title}</Text>
+            <View className="flex-row items-center flex-1 pr-2">
+              {unread ? (
+                <View
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: '#F2A24B',
+                    marginRight: 8,
+                  }}
+                />
+              ) : null}
+              <Text
+                className={`text-[15px] flex-1 ${unread ? 'font-semibold text-[#2F2B28]' : 'font-medium text-[#5A544D]'}`}
+              >
+                {title}
+              </Text>
+            </View>
             <Text className="text-[12px] text-[#8B837B]">{dateLabel}</Text>
           </View>
           {patient ? (
             <Text className="text-[13px] text-[#6D665E] mt-1">{patient}</Text>
           ) : null}
           <Text className="text-[13px] leading-[19px] text-[#6D665E] mt-1.5">{body}</Text>
+
+          {onDismiss ? (
+            <View className="flex-row justify-end mt-2">
+              <TouchableOpacity
+                onPress={(event) => {
+                  event.stopPropagation()
+                  onDismiss()
+                }}
+                hitSlop={10}
+                style={{
+                  minHeight: 36,
+                  paddingHorizontal: 14,
+                  borderRadius: 999,
+                  backgroundColor: '#F8F1E5',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'row',
+                }}
+              >
+                <Ionicons name="close" size={14} color="#6D665E" />
+                <Text style={{ marginLeft: 4, fontSize: 12, color: '#6D665E', fontWeight: '500' }}>
+                  Dismiss
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
       </View>
     </TouchableOpacity>
@@ -113,11 +161,42 @@ function formatDateLabel(iso: string) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+function dateBucketKey(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return 'unknown'
+  return date.toISOString().slice(0, 10)
+}
+
+function dateBucketLabel(key: string): string {
+  if (key === 'unknown') return 'Earlier'
+  const date = new Date(`${key}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return 'Earlier'
+
+  const today = new Date()
+  const todayKey = today.toISOString().slice(0, 10)
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+  const yesterdayKey = yesterday.toISOString().slice(0, 10)
+
+  if (key === todayKey) return 'Today'
+  if (key === yesterdayKey) return 'Yesterday'
+  return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+}
+
 export default function NotificationsScreen() {
   const router = useRouter()
   const params = useLocalSearchParams<{ filter?: string }>()
   const { user } = useAuthStore()
-  const { notifications, activeAlerts, unreadCount, fetchNotifications, loading } = useNotificationStore()
+  const {
+    notifications,
+    activeAlerts,
+    unreadCount,
+    fetchNotifications,
+    markAsRead,
+    markAllAsRead,
+    dismissNotification,
+    loading,
+  } = useNotificationStore()
   const { patients, fetchPatients } = usePatientStore()
   const [refreshing, setRefreshing] = useState(false)
   const [filter, setFilter] = useState<FilterMode>(params.filter === 'stock' ? 'stock' : 'all')
@@ -191,15 +270,55 @@ export default function NotificationsScreen() {
       body,
       patient,
       dateLabel: formatDateLabel(notification.sent_at),
+      sentAt: notification.sent_at,
+      unread: notification.status === 'sent',
+      isLive: true as const,
       tone: isStock ? ('critical' as const) : ('warning' as const),
       icon: iconForEvent(eventType),
       isStock,
     }
   })
 
-  const rows = (liveRows.length > 0 ? liveRows : fallbackRows).filter((row) =>
-    filter === 'stock' ? ('isStock' in row ? row.isStock : true) : true,
-  )
+  const rows = (liveRows.length > 0
+    ? liveRows
+    : fallbackRows.map((row) => ({
+        ...row,
+        sentAt: new Date().toISOString(),
+        unread: false,
+        isLive: false as const,
+        isStock: 'isStock' in row ? row.isStock : false,
+      }))
+  ).filter((row) => (filter === 'stock' ? row.isStock : true))
+
+  const groupedRows = useMemo(() => {
+    const buckets = new Map<string, typeof rows>()
+    for (const row of rows) {
+      const key = dateBucketKey(row.sentAt)
+      const existing = buckets.get(key) ?? []
+      existing.push(row)
+      buckets.set(key, existing)
+    }
+    return Array.from(buckets.entries())
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .map(([key, items]) => ({ key, label: dateBucketLabel(key), items }))
+  }, [rows])
+
+  const handleRowPress = (row: (typeof rows)[number]) => {
+    if (row.isLive && row.unread) {
+      markAsRead(row.id)
+    }
+    Alert.alert(row.title, row.body)
+  }
+
+  const handleDismiss = (row: (typeof rows)[number]) => {
+    if (!row.isLive) return
+    dismissNotification(row.id)
+  }
+
+  const handleMarkAllRead = () => {
+    if (!user?.id || unreadCount === 0) return
+    markAllAsRead(user.id)
+  }
 
   const activeTitle = filter === 'stock' ? 'Low Stock Alerts' : 'Notifications'
 
@@ -238,12 +357,39 @@ export default function NotificationsScreen() {
         </LinearGradient>
 
         <View className="px-5 pt-5">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-5">
-            <View className="flex-row">
+          <View className="flex-row items-center justify-between mb-3">
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ flexDirection: 'row' }}
+              style={{ flexShrink: 1 }}
+            >
               <FilterChip label="All Alerts" selected={filter === 'all'} onPress={() => setFilter('all')} />
               <FilterChip label="Low Stock" selected={filter === 'stock'} onPress={() => setFilter('stock')} />
-            </View>
-          </ScrollView>
+            </ScrollView>
+
+            {unreadCount > 0 ? (
+              <TouchableOpacity
+                onPress={handleMarkAllRead}
+                hitSlop={8}
+                style={{
+                  minHeight: 40,
+                  paddingHorizontal: 14,
+                  borderRadius: 14,
+                  backgroundColor: '#FFFFFF',
+                  borderWidth: 1,
+                  borderColor: '#E9DFD2',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginLeft: 8,
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#8E4B14' }}>
+                  Mark all read
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
 
           {rows.length === 0 ? (
             <View className="bg-white rounded-[24px] px-6 py-10 items-center border border-[#EEE4D8]">
@@ -254,17 +400,36 @@ export default function NotificationsScreen() {
               </Text>
             </View>
           ) : (
-            rows.map((row) => (
-              <AlertRow
-                key={row.id}
-                title={row.title}
-                body={row.body}
-                patient={row.patient}
-                dateLabel={row.dateLabel}
-                icon={row.icon}
-                tone={row.tone}
-                onPress={() => Alert.alert(row.title, row.body)}
-              />
+            groupedRows.map((group) => (
+              <View key={group.key} className="mb-1">
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: '600',
+                    color: '#8B837B',
+                    marginTop: 4,
+                    marginBottom: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: 1,
+                  }}
+                >
+                  {group.label}
+                </Text>
+                {group.items.map((row) => (
+                  <AlertRow
+                    key={row.id}
+                    title={row.title}
+                    body={row.body}
+                    patient={row.patient}
+                    dateLabel={row.dateLabel}
+                    icon={row.icon}
+                    tone={row.tone}
+                    unread={row.unread}
+                    onPress={() => handleRowPress(row)}
+                    onDismiss={row.isLive ? () => handleDismiss(row) : undefined}
+                  />
+                ))}
+              </View>
             ))
           )}
 

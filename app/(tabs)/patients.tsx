@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useAuthStore } from '../../src/stores/authStore'
 import { usePatientStore } from '../../src/stores/patientStore'
 import { useMedicationStore } from '../../src/stores/medicationStore'
+import { supabase } from '../../src/lib/supabase'
 import { Card } from '../../src/components/ui/Card'
 import WardpicIcon from '../../icons/Wardpic.svg'
 
@@ -28,6 +29,8 @@ interface WardSummaryCard {
   patientCount: number
   successCount: number
   pendingCount: number
+  lowStockCount: number
+  fillCompletionLabel: string
   live: boolean
 }
 
@@ -90,7 +93,36 @@ function WardCard({
           </View>
 
           <View className="flex-1 pr-8">
-            <Text className="text-[18px] leading-[22px] font-bold text-[#343230]">{ward.title}</Text>
+            <View className="flex-row items-center">
+              <Text className="text-[18px] leading-[22px] font-bold text-[#343230]">{ward.title}</Text>
+              {ward.lowStockCount > 0 ? (
+                <View
+                  accessibilityLabel={`${ward.lowStockCount} patients with low stock`}
+                  style={{
+                    marginLeft: 8,
+                    minHeight: 22,
+                    paddingHorizontal: 8,
+                    borderRadius: 999,
+                    backgroundColor: '#FBE4E1',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: '#A3322A',
+                      marginRight: 4,
+                    }}
+                  />
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#A3322A' }}>
+                    {ward.lowStockCount} low
+                  </Text>
+                </View>
+              ) : null}
+            </View>
 
             <View className="flex-row items-center mt-2">
               <Ionicons name="layers-outline" size={17} color="#8A91A1" />
@@ -100,6 +132,14 @@ function WardCard({
             <View className="flex-row items-center mt-2">
               <Ionicons name="time-outline" size={17} color="#8A91A1" />
               <Text className="text-[14px] leading-[18px] text-[#7D8798] ml-2">{ward.doseLabel}</Text>
+            </View>
+
+            <View className="flex-row items-center mt-2">
+              <Ionicons name="cube-outline" size={17} color="#8A91A1" />
+              <Text className="text-[14px] leading-[18px] text-[#7D8798] ml-2">
+                Filled {ward.fillCompletionLabel}
+                {ward.fillCompletionLabel === '—' ? ' (no slot data)' : ''}
+              </Text>
             </View>
           </View>
 
@@ -129,6 +169,8 @@ export default function PatientsScreen() {
   const { patients, loading, fetchPatients } = usePatientStore()
   const { scheduleGroups, pendingCount, completedCount, fetchSchedule } = useMedicationStore()
   const [refreshing, setRefreshing] = useState(false)
+  const [lowStockCount, setLowStockCount] = useState(0)
+  const [fillCompletionLabel, setFillCompletionLabel] = useState<string>('—')
 
   const wardId = user?.ward_id ?? ''
   const today = new Date()
@@ -140,6 +182,53 @@ export default function PatientsScreen() {
       fetchPatients(wardId),
       fetchSchedule(wardId, todayStr),
     ])
+
+    // A3 indicators — derive low-stock + fill-completion from cabinet_slots
+    const { data: wardPatients } = await supabase
+      .from('patients')
+      .select('id')
+      .eq('ward_id', wardId)
+      .eq('status', 'active')
+    const patientIds = (wardPatients ?? []).map((p) => p.id)
+
+    if (patientIds.length === 0) {
+      setLowStockCount(0)
+      setFillCompletionLabel('—')
+      return
+    }
+
+    const { data: slots } = await supabase
+      .from('cabinet_slots')
+      .select('patient_id, quantity_remaining, initial_quantity')
+      .in('patient_id', patientIds)
+
+    const slotsByPatient = new Map<string, { remaining: number; initial: number }[]>()
+    for (const slot of slots ?? []) {
+      if (!slot.patient_id) continue
+      const arr = slotsByPatient.get(slot.patient_id) ?? []
+      arr.push({
+        remaining: slot.quantity_remaining ?? 0,
+        initial: slot.initial_quantity ?? 0,
+      })
+      slotsByPatient.set(slot.patient_id, arr)
+    }
+
+    let lowStockPatients = 0
+    let filledPatients = 0
+    for (const id of patientIds) {
+      const patientSlots = slotsByPatient.get(id) ?? []
+      if (patientSlots.length === 0) continue
+      const hasLowStock = patientSlots.some(({ remaining, initial }) => {
+        if (initial <= 0) return remaining <= 2
+        return remaining / initial <= 0.15
+      })
+      if (hasLowStock) lowStockPatients += 1
+      const fullyFilled = patientSlots.every(({ remaining }) => remaining > 0)
+      if (fullyFilled) filledPatients += 1
+    }
+
+    setLowStockCount(lowStockPatients)
+    setFillCompletionLabel(`${filledPatients}/${patientIds.length}`)
   }, [fetchPatients, fetchSchedule, todayStr, wardId])
 
   useEffect(() => {
@@ -163,15 +252,17 @@ export default function PatientsScreen() {
       patientCount: patients.length,
       successCount: completedCount,
       pendingCount,
+      lowStockCount,
+      fillCompletionLabel,
       live: true,
     }]
-  }, [completedCount, patients.length, pendingCount, today, wardId])
+  }, [completedCount, fillCompletionLabel, lowStockCount, patients.length, pendingCount, today, wardId])
 
   const demoWardCards: WardSummaryCard[] = [
-    { id: 'ward-a', title: 'Ward A', subtitle: 'Building 1, Floor 2 - Somying', doseLabel: 'Lunch Dose', patientCount: 16, successCount: 14, pendingCount: 16, live: false },
-    { id: 'ward-b', title: 'Ward B', subtitle: 'Building 1, Floor 2 - Somying', doseLabel: 'Lunch Dose', patientCount: 16, successCount: 14, pendingCount: 16, live: false },
-    { id: 'ward-c', title: 'Ward C', subtitle: 'Building 1, Floor 2 - Somying', doseLabel: 'Lunch Dose', patientCount: 16, successCount: 14, pendingCount: 16, live: false },
-    { id: 'ward-d', title: 'Ward D', subtitle: 'Building 1, Floor 2 - Somying', doseLabel: 'Lunch Dose', patientCount: 16, successCount: 14, pendingCount: 16, live: false },
+    { id: 'ward-a', title: 'Ward A', subtitle: 'Building 1, Floor 2 - Somying', doseLabel: 'Lunch Dose', patientCount: 16, successCount: 14, pendingCount: 16, lowStockCount: 0, fillCompletionLabel: '—', live: false },
+    { id: 'ward-b', title: 'Ward B', subtitle: 'Building 1, Floor 2 - Somying', doseLabel: 'Lunch Dose', patientCount: 16, successCount: 14, pendingCount: 16, lowStockCount: 0, fillCompletionLabel: '—', live: false },
+    { id: 'ward-c', title: 'Ward C', subtitle: 'Building 1, Floor 2 - Somying', doseLabel: 'Lunch Dose', patientCount: 16, successCount: 14, pendingCount: 16, lowStockCount: 0, fillCompletionLabel: '—', live: false },
+    { id: 'ward-d', title: 'Ward D', subtitle: 'Building 1, Floor 2 - Somying', doseLabel: 'Lunch Dose', patientCount: 16, successCount: 14, pendingCount: 16, lowStockCount: 0, fillCompletionLabel: '—', live: false },
   ]
 
   const visualFallback = liveWardCards.length === 0 || (patients.length === 0 && scheduleGroups.length === 0)

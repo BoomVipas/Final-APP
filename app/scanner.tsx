@@ -736,20 +736,9 @@ export default function ScannerScreen() {
 
       const strength = form.unit ? `${form.strength} ${form.unit}`.trim() : form.strength
 
-      const { data: existing } = await supabase
-        .from('medicines')
-        .select('id, name')
-        .ilike('name', `%${nameEn || nameTh}%`)
-        .limit(1)
-        .maybeSingle()
-
-      if (existing) {
-        setIsDuplicate(true)
-        setSavedMedId(existing.id)
-        setScreenState('success')
-        setSaving(false)
-        return
-      }
+      // Duplicate-medication check intentionally skipped — every scan saves a
+      // fresh row in `medicines` per user request (2026-04-28). Re-enable by
+      // restoring the `existing` lookup if you need de-duplication later.
 
       const { data: inserted, error } = await supabase
         .from('medicines')

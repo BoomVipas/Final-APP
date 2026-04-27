@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -137,9 +139,55 @@ export default function ReportScreen() {
           end={{ x: 1, y: 1 }}
           style={styles.hero}
         >
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={28} color="#2F2D2B" />
-          </Pressable>
+          <View style={styles.heroTopRow}>
+            <Pressable onPress={() => router.back()} style={styles.backButton}>
+              <Ionicons name="chevron-back" size={28} color="#2F2D2B" />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Share report"
+              onPress={async () => {
+                if (loading) return
+                const todayLabel = new Date().toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                })
+                const lines: string[] = []
+                lines.push(`PILLo Dispensing Report — ${todayLabel}`)
+                lines.push('')
+                lines.push(`Total actions: ${summary.total}`)
+                lines.push(`Confirmed: ${summary.confirmed}`)
+                lines.push(`Refused: ${summary.refused}`)
+                lines.push(`Skipped: ${summary.skipped}`)
+                lines.push('')
+                if (summary.patients.length > 0) {
+                  lines.push('Most active patients:')
+                  for (const p of summary.patients) {
+                    lines.push(`  • ${p.name} — ${p.count}`)
+                  }
+                }
+                lines.push('')
+                lines.push('CSV')
+                lines.push('patient,count')
+                for (const p of summary.patients) {
+                  lines.push(`"${p.name.replace(/"/g, '""')}",${p.count}`)
+                }
+                try {
+                  await Share.share({
+                    message: lines.join('\n'),
+                    title: `PILLo Dispensing Report — ${todayLabel}`,
+                  })
+                } catch (err) {
+                  Alert.alert('Share failed', err instanceof Error ? err.message : 'Could not open share sheet.')
+                }
+              }}
+              style={styles.shareButton}
+            >
+              <Ionicons name="share-outline" size={22} color="#2F2D2B" />
+            </Pressable>
+          </View>
           <Text style={styles.heroTitle}>Dispensing Report</Text>
           <Text style={styles.heroSubtitle}>Today&apos;s activity summary.</Text>
         </LinearGradient>
@@ -210,6 +258,19 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
   },
   backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  shareButton: {
     width: 44,
     height: 44,
     borderRadius: 22,

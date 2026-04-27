@@ -3,7 +3,7 @@
  * Home screen implemented from the provided Figma screenshot.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -374,7 +374,14 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets()
   const { user } = useAuthStore()
   const { patients, fetchPatients } = usePatientStore()
-  const { scheduleGroups, pendingCount, completedCount, fetchSchedule } = useMedicationStore()
+  const {
+    scheduleGroups,
+    pendingCount,
+    completedCount,
+    fetchSchedule,
+    skipDose,
+    subscribeToRealtime,
+  } = useMedicationStore()
   const { activeAlerts, fetchNotifications } = useNotificationStore()
   const { pending: pendingHandover, fetchPending, setPending } = useHandoverStore()
   const [refreshing, setRefreshing] = useState(false)
@@ -469,6 +476,20 @@ export default function HomeScreen() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  const realtimeUnsubRef = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    realtimeUnsubRef.current?.()
+    if (!wardScope) {
+      realtimeUnsubRef.current = null
+      return
+    }
+    realtimeUnsubRef.current = subscribeToRealtime(wardScope, todayStr)
+    return () => {
+      realtimeUnsubRef.current?.()
+      realtimeUnsubRef.current = null
+    }
+  }, [subscribeToRealtime, todayStr, wardScope])
 
   useEffect(() => {
     if (wardOptions.length === 1) {
@@ -629,12 +650,59 @@ export default function HomeScreen() {
   }
 
   const showPatientActions = (patient: DispensePatientCard) => {
+    const patientPendingItems = allTodayItems.filter(
+      (item) => item.patient_id === patient.id && item.status === 'pending' && !item.conflict_flag,
+    )
+
     Alert.alert(
       patient.name,
       'Choose the next workflow for this patient.',
       [
         { text: 'View Profile', onPress: () => openPatientDetail(patient.id) },
-        { text: 'Open Ward', onPress: () => router.push('/patients') },
+        {
+          text: 'Confirm Dose',
+          onPress: () => router.push('/(tabs)/schedule'),
+        },
+        {
+          text:
+            patientPendingItems.length > 0
+              ? `Skip ${patientPendingItems.length} pending`
+              : 'Skip (no pending)',
+          style: 'destructive',
+          onPress: () => {
+            if (!user || patientPendingItems.length === 0) return
+            Alert.alert(
+              'Skip pending doses?',
+              `Mark all ${patientPendingItems.length} of today's pending doses for ${patient.name} as skipped?`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Skip all',
+                  style: 'destructive',
+                  onPress: async () => {
+                    let skipped = 0
+                    let failed = 0
+                    for (const item of patientPendingItems) {
+                      try {
+                        await skipDose(item, user.id)
+                        skipped += 1
+                      } catch {
+                        failed += 1
+                      }
+                    }
+                    await loadData()
+                    Alert.alert(
+                      'Skipped',
+                      failed > 0
+                        ? `Skipped ${skipped}; ${failed} failed.`
+                        : `Skipped ${skipped} dose${skipped === 1 ? '' : 's'}.`,
+                    )
+                  },
+                },
+              ],
+            )
+          },
+        },
         { text: 'Cancel', style: 'cancel' },
       ],
     )
@@ -913,6 +981,29 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+    <TouchableOpacity
+      accessibilityLabel="Voice assistant"
+      onPress={() => router.push('/voice')}
+      activeOpacity={0.85}
+      style={{
+        position: 'absolute',
+        right: 16,
+        bottom: Math.max(96, insets.bottom + 80),
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: '#E8721A',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.25,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
+        elevation: 6,
+      }}
+    >
+      <Ionicons name="mic" size={26} color="#fff" />
+    </TouchableOpacity>
     <BottomNav
       activeTab="home"
       onHome={() => router.replace('/(tabs)')}

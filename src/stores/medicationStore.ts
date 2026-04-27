@@ -59,9 +59,15 @@ interface MedicationState {
   confirmDose: (
     item: ScheduleItem,
     caregiverId: string,
-    options?: { force?: boolean; method?: MedicationLogsInsert['method'] },
+    options?: { force?: boolean; method?: MedicationLogsInsert['method']; notes?: string | null },
   ) => Promise<void>
-  refuseDose: (item: ScheduleItem, caregiverId: string, reason: string) => Promise<void>
+  refuseDose: (
+    item: ScheduleItem,
+    caregiverId: string,
+    reason: string,
+    notes?: string | null,
+  ) => Promise<void>
+  skipDose: (item: ScheduleItem, caregiverId: string, notes?: string | null) => Promise<void>
   subscribeToRealtime: (wardId: string, date: string) => () => void
   clearError: () => void
 }
@@ -236,6 +242,7 @@ export const useMedicationStore = create<MedicationState>((set, get) => ({
       conflictFlag = true
     }
 
+    const trimmedNotes = options?.notes?.trim()
     const log: MedicationLogsInsert = {
       prescription_id: item.prescription_id,
       patient_id: item.patient_id,
@@ -245,13 +252,20 @@ export const useMedicationStore = create<MedicationState>((set, get) => ({
       status: 'confirmed',
       method: options?.method ?? 'normal',
       conflict_flag: conflictFlag,
+      notes: trimmedNotes ? trimmedNotes : null,
     }
 
     const { error } = await supabase.from('medication_logs').insert(log)
     if (error) throw error
   },
 
-  refuseDose: async (item: ScheduleItem, caregiverId: string, reason: string) => {
+  refuseDose: async (
+    item: ScheduleItem,
+    caregiverId: string,
+    reason: string,
+    notes?: string | null,
+  ) => {
+    const trimmedNotes = notes?.trim()
     const log: MedicationLogsInsert = {
       prescription_id: item.prescription_id,
       patient_id: item.patient_id,
@@ -261,14 +275,40 @@ export const useMedicationStore = create<MedicationState>((set, get) => ({
       status: 'refused',
       method: 'normal',
       refusal_reason: reason,
+      notes: trimmedNotes ? trimmedNotes : null,
+    }
+    const { error } = await supabase.from('medication_logs').insert(log)
+    if (error) throw error
+  },
+
+  skipDose: async (item: ScheduleItem, caregiverId: string, notes?: string | null) => {
+    const trimmedNotes = notes?.trim()
+    const log: MedicationLogsInsert = {
+      prescription_id: item.prescription_id,
+      patient_id: item.patient_id,
+      medicine_id: item.medicine_id,
+      caregiver_id: caregiverId,
+      meal_time: item.meal_time,
+      status: 'skipped',
+      method: 'normal',
+      notes: trimmedNotes ? trimmedNotes : null,
     }
     const { error } = await supabase.from('medication_logs').insert(log)
     if (error) throw error
   },
 
   subscribeToRealtime: (wardId: string, date: string) => {
+    const topic = `medication_logs_ward_${wardId}`
+    // StrictMode double-mounts and effect re-runs can leave the prior channel
+    // alive in supabase-js's internal map. Calling .channel(topic) returns the
+    // existing already-subscribed instance and .on() then throws. Tear it down
+    // first so we always start from a clean state.
+    supabase.getChannels()
+      .filter((c) => c.topic === `realtime:${topic}`)
+      .forEach((c) => { supabase.removeChannel(c) })
+
     const channel = supabase
-      .channel(`medication_logs_ward_${wardId}`)
+      .channel(topic)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'medication_logs' }, () => {
         get().fetchSchedule(wardId, date)
       })

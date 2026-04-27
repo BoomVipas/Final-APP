@@ -711,6 +711,8 @@ export default function WardDetailScreen() {
   const {
     patients,
     fetchPatients,
+    urgentPatientIds,
+    toggleUrgent,
     loading: patientLoading,
   } = usePatientStore()
   const {
@@ -842,7 +844,9 @@ export default function WardDetailScreen() {
       const quantityScope = patientFocusItems.length > 0 ? patientFocusItems : patientDailyItems
       const badges: PatientBadge[] = []
 
-      if (statusScope.some((item) => item.status !== 'confirmed')) {
+      const hasPending = statusScope.some((item) => item.status !== 'confirmed')
+      const manuallyUrgent = Boolean(urgentPatientIds[meta.id])
+      if (hasPending || manuallyUrgent) {
         badges.push('urgent')
       } else if (statusScope.length > 0) {
         badges.push('dispensed')
@@ -859,7 +863,7 @@ export default function WardDetailScreen() {
     })
 
     return cards
-  }, [allItems, focusItems, patientMetaById])
+  }, [allItems, focusItems, patientMetaById, urgentPatientIds])
 
   const usingDemoPatients = livePatientCards.length === 0 && allItems.length === 0 && patients.length === 0
   const patientCards = usingDemoPatients ? DEMO_PATIENTS : livePatientCards
@@ -1096,9 +1100,10 @@ export default function WardDetailScreen() {
       },
     )
 
-    // Log to medication_logs for each dispensed patient
+    // Log to medication_logs + dispense_items, and decrement inventory for each dispensed patient
     const today = new Date().toISOString()
-    for (const job of dispenseJobs) {
+    for (let i = 0; i < dispenseJobs.length; i += 1) {
+      const job = dispenseJobs[i]
       const rx = await supabase
         .from('patient_prescriptions')
         .select('id, medicine_id')
@@ -1108,17 +1113,46 @@ export default function WardDetailScreen() {
         .limit(1)
         .maybeSingle()
 
-      if (rx.data) {
-        await supabase.from('medication_logs').insert({
-          prescription_id: rx.data.id,
-          patient_id:      job.patientId,
-          medicine_id:     rx.data.medicine_id,
-          caregiver_id:    user?.id ?? '',
-          meal_time:       activeTimeSlot,
-          status:          'confirmed',
-          method:          'normal',
-          administered_at: today,
+      if (!rx.data) continue
+
+      await supabase.from('medication_logs').insert({
+        prescription_id: rx.data.id,
+        patient_id:      job.patientId,
+        medicine_id:     rx.data.medicine_id,
+        caregiver_id:    user?.id ?? '',
+        meal_time:       activeTimeSlot,
+        status:          'confirmed',
+        method:          'normal',
+        administered_at: today,
+      })
+
+      if (session?.id) {
+        await supabase.from('dispense_items').insert({
+          session_id:    session.id,
+          patient_id:    job.patientId,
+          medicine_id:   rx.data.medicine_id,
+          slot_index:    job.cabinet,
+          meal_time:     activeTimeSlot,
+          quantity:      job.tablets,
+          status:        'dispensed',
+          dispensed_at:  today,
         })
+      }
+
+      const { data: slotRow } = await supabase
+        .from('cabinet_slots')
+        .select('id, quantity_remaining')
+        .eq('medicine_id', rx.data.medicine_id)
+        .eq('cabinet_position', job.cabinet)
+        .limit(1)
+        .maybeSingle()
+
+      if (slotRow?.id) {
+        const remaining = Math.max(0, (slotRow.quantity_remaining ?? 0) - job.tablets)
+        await supabase
+          .from('cabinet_slots')
+          .update({ quantity_remaining: remaining })
+          .eq('id', slotRow.id)
       }
     }
 
@@ -1225,9 +1259,45 @@ export default function WardDetailScreen() {
                     }}
                     onMore={() => {
                       if (card.isFallback) return
+                      const isUrgent = Boolean(urgentPatientIds[card.id])
                       Alert.alert(card.name, 'Choose an action for this patient.', [
                         { text: 'View profile', onPress: () => router.push(`/patient/${card.id}`) },
-                        { text: 'Mark as dispensed', onPress: () => {} },
+                        {
+                          text: isUrgent ? 'Clear urgent flag' : 'Mark urgent',
+                          onPress: () => {
+                            const nowUrgent = toggleUrgent(card.id)
+                            Alert.alert(
+                              card.name,
+                              nowUrgent
+                                ? 'Patient marked as urgent.'
+                                : 'Urgent flag cleared.',
+                            )
+                          },
+                        },
+                        {
+                          text: 'Daily family update',
+                          onPress: () =>
+                            router.push({
+                              pathname: '/daily-update',
+                              params: { patientId: card.id, patientName: card.name },
+                            }),
+                        },
+                        {
+                          text: '🚨 Emergency: Notify family via LINE',
+                          onPress: () =>
+                            router.push({
+                              pathname: '/notify-family',
+                              params: { patientId: card.id, patientName: card.name },
+                            }),
+                        },
+                        {
+                          text: 'Manage family contacts',
+                          onPress: () =>
+                            router.push({
+                              pathname: '/family-contacts',
+                              params: { patientId: card.id, patientName: card.name },
+                            }),
+                        },
                         { text: 'Cancel', style: 'cancel' },
                       ])
                     }}

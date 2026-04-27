@@ -104,6 +104,7 @@ export default function SettingsScreen() {
   const role = currentProfile?.role ?? 'nurse'
   const roleLabel = ROLE_LABELS[role]
   const showReport = role === 'admin' || role === 'nurse'
+  const canManageHandovers = role === 'admin' || role === 'nurse'
   const initials = displayName
     .split(/\s+/)
     .slice(0, 2)
@@ -240,18 +241,22 @@ export default function SettingsScreen() {
               <View style={styles.divider} />
             </>
           ) : null}
-          <MenuItem
-            icon="swap-horizontal"
-            label="Start Handover"
-            onPress={handleStartHandover}
-          />
-          <View style={styles.divider} />
-          <MenuItem
-            icon="time"
-            label="Handover History"
-            onPress={() => router.push('/handover-history')}
-          />
-          <View style={styles.divider} />
+          {canManageHandovers ? (
+            <>
+              <MenuItem
+                icon="swap-horizontal"
+                label="Start Handover"
+                onPress={handleStartHandover}
+              />
+              <View style={styles.divider} />
+              <MenuItem
+                icon="time"
+                label="Handover History"
+                onPress={() => router.push('/handover-history')}
+              />
+              <View style={styles.divider} />
+            </>
+          ) : null}
           <MenuItem
             icon="notifications"
             label="Notifications"

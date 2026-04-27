@@ -289,6 +289,8 @@ export interface FamilyContactsRow {
   notification_preferences: Record<string, unknown>
   quiet_hours_start: string | null
   quiet_hours_end: string | null
+  link_token: string
+  linked_at: string | null
   created_at: string
 }
 

@@ -21,7 +21,8 @@ import { useAuthStore } from '../../src/stores/authStore'
 import { useMedicationStore, type ScheduleItem } from '../../src/stores/medicationStore'
 import { USE_MOCK, MOCK_PRESCRIPTIONS, mockSelectPatient } from '../../src/mocks'
 import { supabase } from '../../src/lib/supabase'
-import type { MealTime } from '../../src/types/database'
+import { scheduleRefillReminder } from '../../src/lib/notifications'
+import type { LogMethod, LogStatus, MealTime } from '../../src/types/database'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
 import HomeIcon from '../../icons/Home.svg'
 import WardIcon from '../../icons/Ward.svg'
@@ -31,8 +32,67 @@ import HealthIcon from '../../icons/Health.svg'
 import AppointmentIcon from '../../icons/Appointment.svg'
 import DetailsIcon from '../../icons/Details.svg'
 
-type DetailTab = 'medications' | 'appointments' | 'device'
+type DetailTab = 'medications' | 'appointments' | 'device' | 'history'
 type WarningTone = 'critical' | 'warning' | null
+
+interface MedicationHistoryEntry {
+  id: string
+  administered_at: string
+  meal_time: MealTime
+  status: LogStatus
+  method: LogMethod
+  refusal_reason: string | null
+  notes: string | null
+  medicine_name: string
+  medicine_strength: string | null
+}
+
+const MOCK_HISTORY: MedicationHistoryEntry[] = [
+  {
+    id: 'mock-h-1',
+    administered_at: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
+    meal_time: 'noon',
+    status: 'confirmed',
+    method: 'normal',
+    refusal_reason: null,
+    notes: 'Taken with water after lunch',
+    medicine_name: 'Amlodipine',
+    medicine_strength: '5 mg',
+  },
+  {
+    id: 'mock-h-2',
+    administered_at: new Date(Date.now() - 1000 * 60 * 60 * 9).toISOString(),
+    meal_time: 'morning',
+    status: 'refused',
+    method: 'normal',
+    refusal_reason: 'Patient refused',
+    notes: null,
+    medicine_name: 'Metformin',
+    medicine_strength: '500 mg',
+  },
+  {
+    id: 'mock-h-3',
+    administered_at: new Date(Date.now() - 1000 * 60 * 60 * 28).toISOString(),
+    meal_time: 'bedtime',
+    status: 'confirmed',
+    method: 'crushed',
+    refusal_reason: null,
+    notes: null,
+    medicine_name: 'Risperidone',
+    medicine_strength: '2 mg',
+  },
+  {
+    id: 'mock-h-4',
+    administered_at: new Date(Date.now() - 1000 * 60 * 60 * 33).toISOString(),
+    meal_time: 'evening',
+    status: 'skipped',
+    method: 'normal',
+    refusal_reason: null,
+    notes: 'NPO before procedure',
+    medicine_name: 'Metoprolol',
+    medicine_strength: '25 mg',
+  },
+]
 
 interface DemoPatientDetail {
   id: string
@@ -49,6 +109,7 @@ interface DemoPatientDetail {
 interface LivePrescription {
   id: string
   patient_id: string
+  medicine_id: string | null
   dose_quantity: number
   meal_times: MealTime[]
   notes: string | null
@@ -64,6 +125,7 @@ interface LivePrescription {
 
 interface DisplayMedication {
   id: string
+  medicineId?: string | null
   medicineName: string
   doseQuantity: number
   dosageForm: string | null
@@ -72,6 +134,8 @@ interface DisplayMedication {
   daysLeft: number | null
   endDateLabel: string | null
   warningTone: WarningTone
+  quantityRemaining?: number | null
+  initialQuantity?: number | null
 }
 
 interface DetailPanelItem {
@@ -82,6 +146,16 @@ interface DetailPanelItem {
   meta: string
   badge: string
   badgeTone: 'neutral' | 'success' | 'warning'
+}
+
+interface CabinetSlotInfo {
+  id: string
+  cabinet_position: number
+  partition: string
+  quantity_remaining: number
+  initial_quantity: number | null
+  expiry_date: string | null
+  medicine: { name: string; strength: string | null } | null
 }
 
 const DISPLAY_MEALS: MealTime[] = ['morning', 'noon', 'evening', 'bedtime']
@@ -491,26 +565,77 @@ function MedicationChip({ label, active }: { label: string; active: boolean }) {
   )
 }
 
-function MedicationCard({ medication }: { medication: DisplayMedication }) {
+function MedicationCard({
+  medication,
+  patientName,
+  onDiscontinue,
+  onRequestRefill,
+}: {
+  medication: DisplayMedication
+  patientName: string
+  onDiscontinue: (id: string, name: string) => void
+  onRequestRefill: (medication: DisplayMedication) => void
+}) {
   const warningBackground = medication.warningTone === 'critical' ? '#FDEEEF' : '#FFF7E9'
   const warningColor = medication.warningTone === 'critical' ? '#EF5D5D' : '#F3A24D'
   const warningIcon = medication.warningTone === 'critical' ? 'alert-circle' : 'warning'
 
+  const stockPercent =
+    medication.initialQuantity && medication.initialQuantity > 0 && medication.quantityRemaining !== null && medication.quantityRemaining !== undefined
+      ? Math.max(0, Math.min(1, medication.quantityRemaining / medication.initialQuantity))
+      : null
+  const stockTone =
+    stockPercent === null
+      ? 'unknown'
+      : stockPercent <= 0.15
+        ? 'critical'
+        : stockPercent <= 0.35
+          ? 'warning'
+          : 'ok'
+  const stockBarColor =
+    stockTone === 'critical' ? '#EF5D5D' : stockTone === 'warning' ? '#F3A24D' : '#27B07A'
+
   const showMedicationActions = () => {
     Alert.alert(medication.medicineName, 'Choose an action for this medication.', [
-      { text: 'View schedule', onPress: () => {} },
-      { text: 'Mark as dispensed', onPress: () => {} },
+      {
+        text: 'Request refill',
+        onPress: () => onRequestRefill(medication),
+      },
+      {
+        text: 'Discontinue',
+        style: 'destructive',
+        onPress: () => onDiscontinue(medication.id, medication.medicineName),
+      },
       { text: 'Cancel', style: 'cancel' },
     ])
   }
 
   const handleSetReminder = () => {
+    const daysLeft = medication.daysLeft ?? 0
+    const remindIn = Math.max(daysLeft - 1, 1)
     Alert.alert(
       'Set reminder',
-      `Notify ${medication.daysLeft ?? 0} day(s) before ${medication.medicineName} runs out?`,
+      `Notify in ${remindIn} day(s) that ${medication.medicineName} is running low?`,
       [
-        { text: 'Confirm', onPress: () => {} },
         { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: async () => {
+            const id = await scheduleRefillReminder({
+              medicineName: medication.medicineName,
+              daysFromNow: remindIn,
+              patientName,
+            })
+            if (id) {
+              Alert.alert('Reminder set', `You'll be reminded in ${remindIn} day(s).`)
+            } else {
+              Alert.alert(
+                'Permission needed',
+                'Enable notifications in Settings to schedule reminders.',
+              )
+            }
+          },
+        },
       ],
     )
   }
@@ -590,6 +715,36 @@ function MedicationCard({ medication }: { medication: DisplayMedication }) {
           />
         ))}
       </View>
+
+      {stockPercent !== null ? (
+        <View style={{ marginTop: 12 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+            <Text style={{ fontSize: 11, color: '#7E8797', fontWeight: '600', letterSpacing: 0.5 }}>
+              STOCK
+            </Text>
+            <Text style={{ fontSize: 11, color: stockBarColor, fontWeight: '700' }}>
+              {medication.quantityRemaining} / {medication.initialQuantity}
+              {stockTone === 'critical' ? '  ·  Refill soon' : ''}
+            </Text>
+          </View>
+          <View
+            style={{
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: '#F1ECE5',
+              overflow: 'hidden',
+            }}
+          >
+            <View
+              style={{
+                width: `${Math.round(stockPercent * 100)}%`,
+                height: '100%',
+                backgroundColor: stockBarColor,
+              }}
+            />
+          </View>
+        </View>
+      ) : null}
 
       {medication.warningTone ? (
         <View
@@ -786,17 +941,123 @@ function ScreenEmptyState({
   )
 }
 
+function formatHistoryDateBucket(iso: string): string {
+  const d = new Date(iso)
+  const today = new Date()
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  const startOfThat = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const dayDelta = Math.round((startOfToday - startOfThat) / (1000 * 60 * 60 * 24))
+  if (dayDelta === 0) return 'Today'
+  if (dayDelta === 1) return 'Yesterday'
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+function formatHistoryTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
+function HistoryStatusPill({ status }: { status: LogStatus }) {
+  const tone =
+    status === 'confirmed'
+      ? { bg: '#E6FBF5', fg: '#0FB38D', label: 'Confirmed' }
+      : status === 'refused'
+        ? { bg: '#FDEEEF', fg: '#EF5D5D', label: 'Refused' }
+        : { bg: '#F0F2F5', fg: '#687385', label: 'Skipped' }
+  return (
+    <View
+      style={{
+        borderRadius: 999,
+        backgroundColor: tone.bg,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+      }}
+    >
+      <Text style={{ fontSize: 11, lineHeight: 14, fontWeight: '700', color: tone.fg }}>{tone.label}</Text>
+    </View>
+  )
+}
+
+function MedicationHistoryList({ entries }: { entries: MedicationHistoryEntry[] }) {
+  const buckets = new Map<string, MedicationHistoryEntry[]>()
+  for (const entry of entries) {
+    const key = formatHistoryDateBucket(entry.administered_at)
+    const existing = buckets.get(key) ?? []
+    existing.push(entry)
+    buckets.set(key, existing)
+  }
+
+  return (
+    <View style={{ gap: 18 }}>
+      {Array.from(buckets.entries()).map(([bucket, rows]) => (
+        <View key={bucket} style={{ gap: 10 }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: '#7E8797', letterSpacing: 0.5 }}>
+            {bucket.toUpperCase()}
+          </Text>
+          {rows.map((entry) => {
+            const medicineLabel = buildMedicineName(entry.medicine_name, entry.medicine_strength)
+            const methodLabel = entry.method !== 'normal' ? ` · ${entry.method.replace('_', ' ')}` : ''
+            const subline = entry.refusal_reason
+              ? entry.refusal_reason
+              : entry.notes
+                ? entry.notes
+                : null
+            return (
+              <View
+                key={entry.id}
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 18,
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  shadowColor: '#D7CCBB',
+                  shadowOpacity: 0.18,
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowRadius: 12,
+                  elevation: 2,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#3A3938' }}>
+                    {formatHistoryTime(entry.administered_at)} · {entry.meal_time}
+                    {methodLabel}
+                  </Text>
+                  <HistoryStatusPill status={entry.status} />
+                </View>
+                <Text style={{ marginTop: 6, fontSize: 14, lineHeight: 20, fontWeight: '700', color: '#2F2E2D' }} numberOfLines={1}>
+                  {medicineLabel}
+                </Text>
+                {subline ? (
+                  <Text style={{ marginTop: 4, fontSize: 12, lineHeight: 17, color: '#7E8797' }}>{subline}</Text>
+                ) : null}
+              </View>
+            )
+          })}
+        </View>
+      ))}
+    </View>
+  )
+}
+
 export default function PatientDetailScreen() {
-  const params = useLocalSearchParams<{ id?: string | string[] }>()
+  const params = useLocalSearchParams<{ id?: string | string[]; tab?: string | string[] }>()
   const router = useRouter()
   const patientId = Array.isArray(params.id) ? params.id[0] : params.id
+  const tabParam = Array.isArray(params.tab) ? params.tab[0] : params.tab
+  const initialTab: DetailTab =
+    tabParam === 'history' || tabParam === 'appointments' || tabParam === 'device' || tabParam === 'medications'
+      ? tabParam
+      : 'medications'
   const { selectedPatient, loading, fetchPatientDetail } = usePatientStore()
   const { user } = useAuthStore()
   const { scheduleGroups, fetchSchedule } = useMedicationStore()
 
-  const [activeTab, setActiveTab] = useState<DetailTab>('medications')
+  const [activeTab, setActiveTab] = useState<DetailTab>(initialTab)
   const [prescriptions, setPrescriptions] = useState<LivePrescription[]>([])
   const [prescriptionsLoading, setPrescriptionsLoading] = useState(false)
+  const [cabinetSlots, setCabinetSlots] = useState<CabinetSlotInfo[]>([])
+  const [historyEntries, setHistoryEntries] = useState<MedicationHistoryEntry[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [refreshTick, setRefreshTick] = useState(0)
 
   useEffect(() => {
     if (!patientId) return
@@ -823,6 +1084,7 @@ export default function PatientDetailScreen() {
           .select(`
             id,
             patient_id,
+            medicine_id,
             dose_quantity,
             meal_times,
             notes,
@@ -843,12 +1105,132 @@ export default function PatientDetailScreen() {
           setPrescriptions((data ?? []) as unknown as LivePrescription[])
         }
 
+        const { data: slots } = await supabase
+          .from('cabinet_slots')
+          .select(`
+            id,
+            cabinet_position,
+            partition,
+            quantity_remaining,
+            initial_quantity,
+            expiry_date,
+            medicines (
+              name,
+              strength
+            )
+          `)
+          .eq('patient_id', currentPatientId)
+          .order('cabinet_position', { ascending: true })
+
+        const mapped: CabinetSlotInfo[] = ((slots ?? []) as unknown as Array<
+          Omit<CabinetSlotInfo, 'medicine'> & {
+            medicines: { name: string; strength: string | null } | null
+          }
+        >).map((row) => ({
+          id: row.id,
+          cabinet_position: row.cabinet_position,
+          partition: row.partition,
+          quantity_remaining: row.quantity_remaining,
+          initial_quantity: row.initial_quantity,
+          expiry_date: row.expiry_date,
+          medicine: row.medicines,
+        }))
+        setCabinetSlots(mapped)
+
         setPrescriptionsLoading(false)
       }
     }
 
     void load()
-  }, [fetchPatientDetail, fetchSchedule, patientId, user?.ward_id])
+  }, [fetchPatientDetail, fetchSchedule, patientId, user?.ward_id, refreshTick])
+
+  useEffect(() => {
+    if (!patientId || activeTab !== 'history') return
+
+    if (USE_MOCK) {
+      setHistoryEntries(MOCK_HISTORY)
+      return
+    }
+
+    let cancelled = false
+    const currentPatientId = patientId
+    setHistoryLoading(true)
+
+    supabase
+      .from('medication_logs')
+      .select(`
+        id,
+        administered_at,
+        meal_time,
+        status,
+        method,
+        refusal_reason,
+        notes,
+        medicines (
+          name,
+          strength
+        )
+      `)
+      .eq('patient_id', currentPatientId)
+      .order('administered_at', { ascending: false })
+      .limit(60)
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          setHistoryEntries([])
+        } else {
+          const mapped: MedicationHistoryEntry[] = (data ?? []).map((row) => {
+            const medicine = (row as { medicines?: { name?: string; strength?: string | null } | null }).medicines
+            return {
+              id: row.id as string,
+              administered_at: row.administered_at as string,
+              meal_time: row.meal_time as MealTime,
+              status: row.status as LogStatus,
+              method: row.method as LogMethod,
+              refusal_reason: (row.refusal_reason as string | null) ?? null,
+              notes: (row.notes as string | null) ?? null,
+              medicine_name: medicine?.name ?? 'Medication',
+              medicine_strength: medicine?.strength ?? null,
+            }
+          })
+          setHistoryEntries(mapped)
+        }
+        setHistoryLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, patientId, refreshTick])
+
+  const handleDiscontinuePrescription = async (prescriptionId: string, medicineName: string) => {
+    Alert.alert(
+      'Discontinue medication',
+      `Stop ${medicineName}? It will be hidden from the active list. You can re-add it later.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Discontinue',
+          style: 'destructive',
+          onPress: async () => {
+            if (USE_MOCK) {
+              Alert.alert('Mock mode', 'Discontinue would update patient_prescriptions in live mode.')
+              return
+            }
+            const { error } = await supabase
+              .from('patient_prescriptions')
+              .update({ is_active: false })
+              .eq('id', prescriptionId)
+            if (error) {
+              Alert.alert('Error', error.message)
+              return
+            }
+            setRefreshTick((tick) => tick + 1)
+          },
+        },
+      ],
+    )
+  }
 
   const demoPatient = patientId ? DEMO_PATIENTS[patientId] : null
   const storePatient = selectedPatient?.id === patientId ? selectedPatient : null
@@ -902,9 +1284,17 @@ export default function PatientDetailScreen() {
 
   const liveMedications: DisplayMedication[] = prescriptions.map((prescription) => {
     const daysLeft = getDaysLeft(prescription.end_date)
+    const expectedName = buildMedicineName(
+      prescription.medicines?.name ?? '',
+      prescription.medicines?.strength ?? null,
+    )
+    const slot = cabinetSlots.find(
+      (s) => s.medicine && buildMedicineName(s.medicine.name, s.medicine.strength) === expectedName,
+    )
 
     return {
       id: prescription.id,
+      medicineId: prescription.medicine_id,
       medicineName: buildMedicineName(
         prescription.medicines?.name ?? 'Medication',
         prescription.medicines?.strength ?? null,
@@ -916,6 +1306,8 @@ export default function PatientDetailScreen() {
       daysLeft,
       endDateLabel: formatShortDate(prescription.end_date),
       warningTone: getWarningTone(daysLeft),
+      quantityRemaining: slot?.quantity_remaining ?? null,
+      initialQuantity: slot?.initial_quantity ?? null,
     }
   })
 
@@ -942,12 +1334,19 @@ export default function PatientDetailScreen() {
     (medication) => medication.endDateLabel || medication.warningTone,
   ).length
 
+  const HistoryTabIcon: React.FC<{ width?: number; height?: number; color?: string }> = ({
+    width = 22,
+    height = 22,
+    color = '#2F2E2D',
+  }) => <Ionicons name="time-outline" size={Math.max(width, height)} color={color} />
+
   const detailTabs: Array<{
     key: DetailTab
     label: string
     Icon: React.FC<{ width?: number; height?: number; color?: string }>
   }> = [
     { key: 'medications', label: 'Medication', Icon: MedicineIcon },
+    { key: 'history', label: 'History', Icon: HistoryTabIcon },
     { key: 'appointments', label: 'Appointments', Icon: AppointmentIcon },
     { key: 'device', label: 'Device', Icon: DetailsIcon },
   ]
@@ -958,11 +1357,42 @@ export default function PatientDetailScreen() {
     subtitle: index === 0 ? `${patientName} medication follow-up` : item.subtitle,
   }))
 
-  const devices = DEFAULT_DEVICES.map((item, index) => ({
-    ...item,
-    id: `${item.id}-${patientId ?? 'patient'}`,
-    subtitle: index === 0 ? `Assigned to Room ${roomNumber}` : item.subtitle,
-  }))
+  const liveDeviceItems: DetailPanelItem[] = cabinetSlots.map((slot) => {
+    const remaining = slot.quantity_remaining ?? 0
+    const initial = slot.initial_quantity ?? 0
+    const ratio = initial > 0 ? remaining / initial : null
+    const tone: DetailPanelItem['badgeTone'] =
+      ratio === null
+        ? 'neutral'
+        : ratio <= 0.15
+          ? 'warning'
+          : ratio <= 0.35
+            ? 'warning'
+            : 'success'
+    const badge =
+      ratio === null
+        ? `${remaining} left`
+        : ratio <= 0.15
+          ? 'Low'
+          : ratio <= 0.35
+            ? 'Watch'
+            : 'OK'
+    const expiryLabel = slot.expiry_date
+      ? `Expires ${formatShortDate(slot.expiry_date) ?? slot.expiry_date}`
+      : 'No expiry on file'
+    const medicineLabel = slot.medicine
+      ? buildMedicineName(slot.medicine.name, slot.medicine.strength)
+      : 'Unassigned medicine'
+    return {
+      id: `device-${slot.id}`,
+      icon: 'cube-outline' as const,
+      title: `Slot #${slot.cabinet_position} · ${slot.partition}`,
+      subtitle: medicineLabel,
+      meta: `${remaining}${initial > 0 ? ` / ${initial}` : ''} units · ${expiryLabel}`,
+      badge,
+      badgeTone: tone,
+    }
+  })
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F7F2EA' }}>
@@ -1046,6 +1476,60 @@ export default function PatientDetailScreen() {
               >
                 Patients Detail
               </Text>
+
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={`Patient actions for ${patientName}`}
+                onPress={() => {
+                  if (!patientId) return
+                  Alert.alert(patientName, 'Choose an action.', [
+                    {
+                      text: 'รายงานครอบครัว / Daily family update',
+                      onPress: () =>
+                        router.push({
+                          pathname: '/daily-update',
+                          params: { patientId, patientName },
+                        }),
+                    },
+                    {
+                      text: '🚨 Emergency: Notify Family via LINE',
+                      onPress: () =>
+                        router.push({
+                          pathname: '/notify-family',
+                          params: { patientId, patientName },
+                        }),
+                    },
+                    {
+                      text: 'Manage Family Contacts',
+                      onPress: () =>
+                        router.push({
+                          pathname: '/family-contacts',
+                          params: { patientId, patientName },
+                        }),
+                    },
+                    {
+                      text: 'Hospital Visit Reminder',
+                      onPress: () =>
+                        router.push({
+                          pathname: '/hospital-visit',
+                          params: { patientId, patientName },
+                        }),
+                    },
+                    { text: 'Cancel', style: 'cancel' },
+                  ])
+                }}
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="ellipsis-horizontal" size={22} color="#2F2E2D" />
+              </TouchableOpacity>
             </View>
 
             <View
@@ -1173,16 +1657,86 @@ export default function PatientDetailScreen() {
         ) : null}
 
         {activeTab === 'medications' && displayMedications.map((medication) => (
-          <MedicationCard key={medication.id} medication={medication} />
+          <MedicationCard
+            key={medication.id}
+            medication={medication}
+            patientName={patientName}
+            onDiscontinue={handleDiscontinuePrescription}
+            onRequestRefill={(med) => {
+              Alert.alert(
+                'Request refill',
+                `Send a refill request for ${med.medicineName} (${patientName})?`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Request',
+                    onPress: async () => {
+                      if (USE_MOCK) {
+                        Alert.alert('Mock mode', 'Refill request would be queued in live mode.')
+                        return
+                      }
+                      const { error } = await supabase.from('prescription_changes').insert({
+                        prescription_id: med.id,
+                        change_type: 'modified',
+                        new_json: { kind: 'refill_request', medicine: med.medicineName, requested_by: user?.id ?? null },
+                        changed_by: user?.id ?? '',
+                      })
+                      if (error) {
+                        Alert.alert('Could not file refill request', error.message)
+                      } else {
+                        Alert.alert('Refill requested', 'A refill request has been logged.')
+                      }
+                    },
+                  },
+                ],
+              )
+            }}
+          />
         ))}
 
-        {activeTab === 'appointments' && appointments.map((item) => (
-          <DetailInfoCard key={item.id} item={item} />
-        ))}
+        {activeTab === 'appointments' && (
+          appointments.length > 0 ? (
+            appointments.map((item) => <DetailInfoCard key={item.id} item={item} />)
+          ) : (
+            <ScreenEmptyState
+              icon="calendar-outline"
+              title="No upcoming appointments"
+              body="Hospital visits scheduled for this patient will appear here. Wire up your hospital booking system to populate this tab."
+            />
+          )
+        )}
 
-        {activeTab === 'device' && devices.map((item) => (
-          <DetailInfoCard key={item.id} item={item} />
-        ))}
+        {activeTab === 'device' && (
+          liveDeviceItems.length > 0 ? (
+            liveDeviceItems.map((item) => <DetailInfoCard key={item.id} item={item} />)
+          ) : (
+            <ScreenEmptyState
+              icon="cube-outline"
+              title="No cabinet slots assigned"
+              body="When a PILLo cabinet slot is allocated to this patient, it will show up here with quantity, partition, and expiry."
+            />
+          )
+        )}
+
+        {activeTab === 'history' && (() => {
+          if (historyLoading) {
+            return (
+              <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+                <ActivityIndicator color="#EFA247" />
+              </View>
+            )
+          }
+          if (historyEntries.length === 0) {
+            return (
+              <ScreenEmptyState
+                icon="time-outline"
+                title="No medication history yet"
+                body="Past doses for this patient will appear here once medication logs are recorded."
+              />
+            )
+          }
+          return <MedicationHistoryList entries={historyEntries} />
+        })()}
       </ScrollView>
 
       {activeTab === 'medications' ? (

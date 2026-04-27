@@ -9,11 +9,38 @@ import '../global.css'
 import React, { useEffect } from 'react'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { useAuthStore } from '../src/stores/authStore'
-import { View, ActivityIndicator, Text } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { View, ActivityIndicator } from 'react-native'
+import * as Notifications from 'expo-notifications'
 import { USE_MOCK, initMockStores } from '../src/mocks'
 import { isDevAuthBypassActive } from '../src/lib/devAuth'
-import { colors, typo } from '../src/theme/typo'
+import { NetworkBanner } from '../src/components/shared/NetworkBanner'
+
+function NotificationRouter() {
+  const router = useRouter()
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, unknown> | undefined
+      if (!data) return
+      const kind = typeof data.kind === 'string' ? data.kind : null
+      const patientId = typeof data.patient_id === 'string' ? data.patient_id : null
+
+      if (kind === 'refill_reminder' || kind === 'stock_alert') {
+        if (patientId) router.push(`/patient/${patientId}`)
+        else router.push('/notifications')
+      } else if (kind === 'handover_pending') {
+        router.push('/handover')
+      } else if (kind === 'medication_due') {
+        router.push('/(tabs)/schedule')
+      } else if (patientId) {
+        router.push(`/patient/${patientId}`)
+      }
+    })
+    return () => sub.remove()
+  }, [router])
+
+  return null
+}
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { session, loading, initialize } = useAuthStore()
@@ -68,42 +95,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function DevAuthBypassBanner() {
-  if (!isDevAuthBypassActive) return null
-  return (
-    <SafeAreaView
-      edges={['top']}
-      style={{ backgroundColor: colors.softOrange }}
-    >
-      <View
-        accessibilityRole="alert"
-        accessibilityLabel="โหมดข้ามการล็อกอิน เปิดอยู่สำหรับนักพัฒนาเท่านั้น"
-        style={{
-          paddingHorizontal: 16,
-          paddingVertical: 8,
-          backgroundColor: colors.softOrange,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.gentleAmber,
-        }}
-      >
-        <Text
-          style={{
-            ...typo.labelMedium,
-            color: colors.text,
-            textAlign: 'center',
-          }}
-        >
-          โหมดข้ามการล็อกอิน (DEV) / Auth bypass active (DEV only)
-        </Text>
-      </View>
-    </SafeAreaView>
-  )
-}
-
 export default function RootLayout() {
   return (
     <AuthGate>
-      <DevAuthBypassBanner />
+      <NetworkBanner />
+      <NotificationRouter />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
@@ -135,6 +131,16 @@ export default function RootLayout() {
           options={{
             headerShown: true,
             title: 'Scan Medication',
+            headerBackTitle: 'Back',
+            headerTintColor: '#E8721A',
+            headerTitleStyle: { fontWeight: '700' },
+          }}
+        />
+        <Stack.Screen
+          name="voice"
+          options={{
+            headerShown: true,
+            title: 'ผู้ช่วยเสียง / Voice Assistant',
             headerBackTitle: 'Back',
             headerTintColor: '#E8721A',
             headerTitleStyle: { fontWeight: '700' },
