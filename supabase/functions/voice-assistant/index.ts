@@ -375,19 +375,29 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 5. Persist conversation if caregiver_id provided.
+    // 5. Persist conversation if caregiver_id provided. Failure here (e.g.
+    //    FK violation when the dev-auth bypass user isn't in `users`) must
+    //    NOT break the voice reply — the chat response is what the user
+    //    actually cares about. Log and continue.
     let conversationId = body.conversation_id ?? null
+    let persistError: string | null = null
     if (body.caregiver_id) {
       const now = new Date().toISOString()
-      conversationId = await persistConversation({
-        supabase,
-        caregiverId: body.caregiver_id,
-        conversationId,
-        turns: [
-          { role: 'user', text: userText, ts: now },
-          { role: 'assistant', text: claudeOut.reply_text, ts: now },
-        ],
-      })
+      try {
+        conversationId = await persistConversation({
+          supabase,
+          caregiverId: body.caregiver_id,
+          conversationId,
+          turns: [
+            { role: 'user', text: userText, ts: now },
+            { role: 'assistant', text: claudeOut.reply_text, ts: now },
+          ],
+        })
+      } catch (err) {
+        persistError = err instanceof Error ? err.message : String(err)
+        console.error('[voice-assistant] conversation persistence skipped:', persistError)
+        conversationId = null
+      }
     }
 
     return jsonResponse({
@@ -403,6 +413,7 @@ Deno.serve(async (req: Request) => {
       tts_stubbed: !audio,
       tts_reason: ttsReason,
       tts_error: ttsError,
+      persist_error: persistError,
       matches: matches.map((m) => ({
         prescription_id: m.prescription_id,
         chunk_text: m.chunk_text,
