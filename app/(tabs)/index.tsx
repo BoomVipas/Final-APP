@@ -735,8 +735,8 @@ export default function HomeScreen() {
           colors={['#FBF0E3', '#F2A65A']}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
-          style={{ paddingTop: insets.top + 16 }}
-          className="px-5 pb-6"
+          style={{ paddingTop: insets.top + 16, paddingBottom: 48 }}
+          className="px-5"
         >
 
           <View className="flex-row items-start justify-between pt-1 px-6 py-3">
@@ -814,41 +814,42 @@ export default function HomeScreen() {
             </View>
           </View>
           
-          <View className="px-4 pt-2 pb-4">
-            <LinearGradient
-              colors={['#FFFFFF', '#FFE6E6']}
-              start={{ x: 1, y: 0 }}
-              end={{ x: 0, y: 0 }}
-              style={{
-                borderRadius: 14,
-                borderWidth: 1,
-                borderColor: '#F1F1F1',
-                shadowColor: '#000',
-                shadowOpacity: 0.05,
-                shadowRadius: 20,
-                shadowOffset: { width: 0, height: 4 },
-                elevation: 2,
-              }}
-            >
-              <TouchableOpacity
-                onPress={() => router.push('/schedule')}
-                activeOpacity={0.88}
-                style={{ borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                    <AlarmClockIcon width={22} height={22} color="#FF6B6B" />
-                  </View>
-                  <View>
-                    <Text style={{ fontSize: 14, color: '#2E2C2A', fontWeight: '500' }}>Needs Attention</Text>
-                    <Text style={{ fontSize: 26, fontWeight: '700', color: '#FF5A52', lineHeight: 32 }}>{needsAttention}</Text>
-                  </View>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#3E3A37" />
-              </TouchableOpacity>
-            </LinearGradient>
-          </View>
         </LinearGradient>
+
+        <View style={{ marginTop: -36, marginHorizontal: 16, marginBottom: -12 }}>
+          <LinearGradient
+            colors={['#FFFFFF', '#FFE6E6']}
+            start={{ x: 1, y: 0 }}
+            end={{ x: 0, y: 0 }}
+            style={{
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: '#F1F1F1',
+              shadowColor: '#000',
+              shadowOpacity: 0.08,
+              shadowRadius: 20,
+              shadowOffset: { width: 0, height: 6 },
+              elevation: 4,
+            }}
+          >
+            <TouchableOpacity
+              onPress={() => router.push('/schedule')}
+              activeOpacity={0.88}
+              style={{ borderRadius: 14, paddingHorizontal: 14, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                  <AlarmClockIcon width={18} height={18} color="#FF6B6B" />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 14, color: '#2E2C2A', fontWeight: '500' }}>Needs Attention</Text>
+                  <Text style={{ fontSize: 26, fontWeight: '700', color: '#FF5A52', lineHeight: 32 }}>{needsAttention}</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#3E3A37" />
+            </TouchableOpacity>
+          </LinearGradient>
+        </View>
 
         {pendingHandover ? (
           <View className="px-4 pt-4">

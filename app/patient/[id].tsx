@@ -1599,8 +1599,8 @@ export default function PatientDetailScreen() {
         </View>
       </View>
 
-      <View style={{ paddingHorizontal: 18, marginTop: 20 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <View style={{ paddingHorizontal: 8, marginTop: 20 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
           {detailTabs.map((tab) => {
             const isActive = activeTab === tab.key
             const TabIcon = tab.Icon
@@ -1609,26 +1609,33 @@ export default function PatientDetailScreen() {
               <TouchableOpacity
                 key={tab.key}
                 onPress={() => setActiveTab(tab.key)}
+                accessibilityRole="tab"
+                accessibilityLabel={tab.label}
+                accessibilityState={{ selected: isActive }}
                 style={{
                   flex: 1,
-                  minHeight: 54,
+                  minHeight: 56,
+                  paddingHorizontal: 4,
+                  paddingVertical: 6,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  borderBottomWidth: 3,
+                  borderBottomWidth: 2,
                   borderBottomColor: isActive ? '#F1A34A' : 'transparent',
-                  flexDirection: 'row',
-                  gap: 8,
                 }}
               >
-                <TabIcon width={22} height={22} color={isActive ? '#F1A34A' : '#2F2E2D'} />
+                <TabIcon width={18} height={18} color={isActive ? '#F1A34A' : '#2F2E2D'} />
                 <Text
                   style={{
-                    fontSize: 16,
-                    lineHeight: 22,
+                    marginTop: 4,
+                    fontSize: 12,
+                    lineHeight: 14,
                     fontWeight: isActive ? '700' : '500',
                     color: isActive ? '#F1A34A' : '#2F2E2D',
+                    textAlign: 'center',
                   }}
                   numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
                 >
                   {tab.label}
                 </Text>
