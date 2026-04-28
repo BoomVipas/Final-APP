@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Alert,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -22,6 +23,7 @@ import { USE_MOCK } from '../../src/mocks'
 import { supabase } from '../../src/lib/supabase'
 import type { DispenseItemsRow, DispenseSessionsRow, MealTime, PatientsRow } from '../../src/types/database'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
+import HeroSectionImg from '../../icons/HeroSection.png'
 import DocumentIcon from '../../icons/Document.svg'
 import DispenseIcon from '../../icons/Dispense.svg'
 import HealthIcon from '../../icons/Health.svg'
@@ -1176,7 +1178,11 @@ export default function WardDetailScreen() {
       <SafeAreaView className="flex-1 bg-[#F7F2EA]" edges={['top', 'left', 'right']}>
         <View className="flex-1">
           <View className="relative h-[220px]">
-            <HeaderBackground />
+            <Image
+              source={HeroSectionImg}
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
+              resizeMode="cover"
+            />
 
             <TouchableOpacity
               onPress={() => router.back()}
@@ -1229,7 +1235,7 @@ export default function WardDetailScreen() {
               contentContainerStyle={{ paddingTop: 14, paddingBottom: 36 }}
               showsVerticalScrollIndicator={false}
             >
-              <View className="bg-white border-t border-[#EAE6E0] border-b border-[#EAE6E0] px-4 py-3 flex-row items-center mb-4">
+              <View className="bg-white border-t  px-4 py-3 flex-row items-center mb-4">
                 <View className="flex-1 rounded-[16px] border border-[#E2E0DB] bg-[#FAFAFA] px-3 py-2.5 flex-row items-center mr-3">
                   <Ionicons name="search-outline" size={18} color="#343434" />
                   <TextInput
