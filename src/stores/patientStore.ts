@@ -10,17 +10,21 @@ import type { PatientsRow } from '../types/database'
 interface PatientState {
   patients: PatientsRow[]
   selectedPatient: PatientsRow | null
+  urgentPatientIds: Record<string, true>
   loading: boolean
   error: string | null
   fetchPatients: (wardId: string) => Promise<void>
   fetchPatientDetail: (patientId: string) => Promise<void>
   searchPatients: (query: string) => PatientsRow[]
+  toggleUrgent: (patientId: string) => boolean
+  isUrgent: (patientId: string) => boolean
   clearError: () => void
 }
 
 export const usePatientStore = create<PatientState>((set, get) => ({
   patients: [],
   selectedPatient: null,
+  urgentPatientIds: {},
   loading: false,
   error: null,
 
@@ -72,6 +76,23 @@ export const usePatientStore = create<PatientState>((set, get) => ({
         (p.room_number ?? '').toLowerCase().includes(q),
     )
   },
+
+  toggleUrgent: (patientId: string) => {
+    const current = get().urgentPatientIds
+    const next = { ...current }
+    let isNowUrgent: boolean
+    if (next[patientId]) {
+      delete next[patientId]
+      isNowUrgent = false
+    } else {
+      next[patientId] = true
+      isNowUrgent = true
+    }
+    set({ urgentPatientIds: next })
+    return isNowUrgent
+  },
+
+  isUrgent: (patientId: string) => Boolean(get().urgentPatientIds[patientId]),
 
   clearError: () => set({ error: null }),
 }))

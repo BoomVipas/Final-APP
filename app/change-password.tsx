@@ -17,7 +17,7 @@ import { useRouter } from 'expo-router'
 
 import { useAuthStore } from '../src/stores/authStore'
 import { supabase } from '../src/lib/supabase'
-import { AUTH_BYPASS_ENABLED } from '../src/lib/devAuth'
+import { isDevAuthBypassActive } from '../src/lib/devAuth'
 
 export default function ChangePasswordScreen() {
   const router = useRouter()
@@ -27,7 +27,7 @@ export default function ChangePasswordScreen() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const bypassActive = AUTH_BYPASS_ENABLED || !session
+  const bypassActive = isDevAuthBypassActive || !session
 
   const handleSave = async () => {
     if (bypassActive) {

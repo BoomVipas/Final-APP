@@ -1,47 +1,65 @@
-// label-scanner — uses Claude Vision API to extract structured medication data
-// from a Thai drug label image, then stores the image in Supabase Storage.
+// label-scanner — uses OpenAI GPT-4o vision to extract structured medication
+// data from a Thai drug label image, then optionally stores the image in
+// Supabase Storage.
 
-import Anthropic from 'https://esm.sh/@anthropic-ai/sdk@latest'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { handleCorsPreFlight, jsonResponse, errorResponse } from '../_shared/cors.ts'
-import { extractJWT, createUserClient, createServiceClient } from '../_shared/auth.ts'
+import { extractJWT, createServiceClient } from '../_shared/auth.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface RequestBody {
   image_base64: string
-  patient_id: string
+  // patient_id is optional — used only to namespace the optional storage upload.
+  patient_id?: string
 }
 
-interface PrescriptionDraft {
-  name_th: string | null
-  name_en: string | null
-  dosage: number | null
-  unit: string | null
-  form: 'tablet' | 'liquid' | 'patch' | 'injection' | null
-  frequency: string | null
-  quantity_dispensed: number | null
-  prescribing_hospital: string | null
-  special_instructions: string | null
-  confidence: number | null
+// Mirror of `MedScanResult` in src/lib/openai.ts — keep these in sync.
+type ScheduleType = 'meal_time' | 'interval_hours' | 'times_per_day' | 'as_needed' | ''
+
+interface MedScanResult {
+  name_th: string
+  name_en: string
+  strength: string
+  unit: string
+  dosage_form: string
+  frequency: string
+  schedule_type: ScheduleType
+  frequency_hours: number
+  times_per_day: number
+  meal_relation: 'before' | 'after' | 'with' | 'any' | ''
+  quantity: string
+  hospital: string
+  confidence: number
 }
 
 // ─── Extraction prompt ────────────────────────────────────────────────────────
 
-const EXTRACTION_PROMPT = `Extract medication information from this Thai drug label. Return a JSON object with these fields:
-- name_th: Thai drug name (string)
-- name_en: English drug name (string)
-- dosage: numeric dosage amount (number)
-- unit: dosage unit e.g. mg, ml (string)
-- form: tablet|liquid|patch|injection (string)
-- frequency: dosing frequency description (string)
-- quantity_dispensed: total quantity in package (number)
-- prescribing_hospital: hospital name if visible (string)
-- special_instructions: any special instructions (string)
-- confidence: overall extraction confidence 0-1 (number)
+const EXTRACTION_PROMPT = `You are a pharmacy assistant AI for Thai hospitals. Analyze the medication label photo and extract structured information.
+Return ONLY a valid JSON object — no markdown, no explanation, just raw JSON — with exactly these fields:
+{
+  "name_th": "Thai medication name (empty string if not visible)",
+  "name_en": "English/generic medication name",
+  "strength": "numeric strength value only e.g. '500' or '10'",
+  "unit": "unit of strength e.g. 'mg', 'ml', 'mcg', 'IU'",
+  "dosage_form": "one of: tablet, capsule, liquid, injection, patch, inhaler, drops, cream, suppository, powder",
+  "frequency": "dosing frequency exactly as written on the label",
+  "schedule_type": "classify the frequency into one of: meal_time (linked to meals/food), interval_hours (every X hours), times_per_day (X times daily not linked to meals), as_needed (PRN/when needed) — empty string if unclear",
+  "frequency_hours": "if schedule_type is interval_hours, the interval as integer e.g. 4, 6, 8, 12, 24 — otherwise 0",
+  "times_per_day": "if schedule_type is times_per_day or meal_time, how many times per day as integer e.g. 1, 2, 3, 4 — otherwise 0",
+  "meal_relation": "if schedule_type is meal_time: before, after, with, or any — otherwise empty string",
+  "quantity": "total quantity in package e.g. '30', '100 ml'",
+  "hospital": "issuing hospital or pharmacy name",
+  "confidence": 0.0
+}
 
-If any field cannot be determined, set it to null.
-Return only valid JSON, no explanation.`
+Classification guide:
+- 'every 4 hours' → schedule_type: interval_hours, frequency_hours: 4
+- 'every 6 hours' → schedule_type: interval_hours, frequency_hours: 6
+- 'twice daily' or '2 times a day' → schedule_type: times_per_day, times_per_day: 2
+- '3 times daily' → schedule_type: times_per_day, times_per_day: 3
+- 'after meals' or 'before food' or 'with breakfast' → schedule_type: meal_time
+- 'as needed' or 'PRN' → schedule_type: as_needed
+Set confidence to a number 0.0–1.0 reflecting how clearly the label was readable. If a field is not visible use an empty string.`
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
@@ -49,6 +67,9 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return handleCorsPreFlight()
   if (req.method !== 'POST') return errorResponse('Method not allowed', 405)
 
+  // Auth header is required (gateway is now deployed with --no-verify-jwt to
+  // accept the new sb_publishable_* anon-key format), but our handler still
+  // checks that *some* token was sent so direct unauth probes are rejected.
   const jwt = extractJWT(req)
   if (!jwt) return errorResponse('Unauthorized', 401)
 
@@ -61,18 +82,15 @@ Deno.serve(async (req: Request) => {
 
   const { image_base64, patient_id } = body
   if (!image_base64) return errorResponse('image_base64 is required')
-  if (!patient_id) return errorResponse('patient_id is required')
 
   const serviceClient = createServiceClient()
 
   try {
-    // ── 1. Call Anthropic Claude Vision API ───────────────────────────────
-    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY')
-    if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY is not configured')
+    // ── 1. Call OpenAI GPT-4o Vision API ──────────────────────────────────
+    const openaiKey = Deno.env.get('OPENAI_API_KEY')
+    if (!openaiKey) throw new Error('OPENAI_API_KEY is not configured')
 
-    const anthropic = new Anthropic({ apiKey: anthropicKey })
-
-    // Determine media type — default to jpeg for drug label photos
+    // Determine media type — default to jpeg for drug label photos.
     // The base64 string may include a data URI prefix like "data:image/png;base64,"
     let mediaType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' =
       'image/jpeg'
@@ -92,48 +110,56 @@ Deno.serve(async (req: Request) => {
       rawBase64 = dataUriMatch[2]
     }
 
-    const claudeResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mediaType,
-                data: rawBase64,
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openaiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        max_tokens: 700,
+        temperature: 0,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: EXTRACTION_PROMPT },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mediaType};base64,${rawBase64}`,
+                  detail: 'high',
+                },
               },
-            },
-            {
-              type: 'text',
-              text: EXTRACTION_PROMPT,
-            },
-          ],
-        },
-      ],
+            ],
+          },
+        ],
+      }),
     })
 
-    // ── 2. Parse JSON from Claude's response ──────────────────────────────
-    const responseText =
-      claudeResponse.content[0].type === 'text'
-        ? claudeResponse.content[0].text
-        : ''
+    if (!openaiResponse.ok) {
+      const errBody = await openaiResponse.text()
+      throw new Error(`OpenAI ${openaiResponse.status}: ${errBody.slice(0, 300)}`)
+    }
 
-    let extracted: PrescriptionDraft
+    // ── 2. Parse JSON from OpenAI's response ──────────────────────────────
+    const completion = (await openaiResponse.json()) as {
+      choices: Array<{ message: { content: string } }>
+    }
+    const responseText = completion.choices?.[0]?.message?.content ?? ''
+
+    let extracted: MedScanResult
     try {
       // Strip any markdown code fences if present
       const cleaned = responseText
         .replace(/```json\s*/gi, '')
         .replace(/```\s*/g, '')
         .trim()
-      extracted = JSON.parse(cleaned) as PrescriptionDraft
+      extracted = JSON.parse(cleaned) as MedScanResult
     } catch {
-      // If Claude returned something un-parseable, return it as an error
       return errorResponse(
-        `Claude returned non-JSON response: ${responseText.slice(0, 200)}`,
+        `OpenAI returned non-JSON response: ${responseText.slice(0, 200)}`,
         422
       )
     }
@@ -144,9 +170,12 @@ Deno.serve(async (req: Request) => {
       extracted.confidence === null ||
       extracted.confidence < LOW_CONFIDENCE_THRESHOLD
 
-    // ── 4. Upload image to Supabase Storage ────────────────────────────────
+    // ── 4. Upload image to Supabase Storage (best-effort) ──────────────────
+    // Bucket may not exist — failure here is non-fatal; we still return the
+    // scan result. Caller may want to create the `label-scans` bucket later.
     const timestamp = Date.now()
-    const storagePath = `${patient_id}/${timestamp}.jpg`
+    const namespace = patient_id ?? 'unattached'
+    const storagePath = `${namespace}/${timestamp}.jpg`
     const BUCKET_NAME = 'label-scans'
 
     // Convert base64 to Uint8Array for storage upload

@@ -2,8 +2,6 @@ import React, { useEffect, useState } from 'react'
 import {
   Alert,
   Dimensions,
-  Image,
-  ImageBackground,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,15 +13,15 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import { Tabs, useRouter } from 'expo-router'
-import BackgroundSettingImage from '../../icons/Backgroundsetting.png'
-import HomeIcon from '../../icons/Home.png'
-import WardIcon from '../../icons/Ward.png'
-import ProfileIcon from '../../icons/Profile.png'
+import { BottomNav } from '../../src/components/shared/BottomNav'
 import { useIsFocused } from '@react-navigation/native'
 
 import { useAuthStore } from '../../src/stores/authStore'
+import { useHandoverStore } from '../../src/stores/handoverStore'
 import { supabase } from '../../src/lib/supabase'
 import type { UserRole, UsersRow } from '../../src/types/database'
+import { USE_MOCK, MOCK_HANDOVER } from '../../src/mocks'
+import type { ShiftHandoversRow } from '../../src/types/database'
 
 const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Administrator',
@@ -38,6 +36,8 @@ const CARD_SHADOW = {
   shadowOffset: { width: 0, height: 10 },
   elevation: 5,
 }
+
+const SETTINGS_HEADER_ASPECT_RATIO = 393 / 205
 
 type MenuItemProps = {
   icon: React.ComponentProps<typeof Ionicons>['name']
@@ -71,27 +71,6 @@ async function fetchProfile(userId: string): Promise<UsersRow | null> {
   return (data as UsersRow | null) ?? null
 }
 
-function BottomNav({ onHome, onWard, onProfile }: { onHome: () => void; onWard: () => void; onProfile: () => void }) {
-  return (
-    <View style={{ backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#ECE5DB', paddingHorizontal: 32, paddingTop: 12, paddingBottom: 20 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <TouchableOpacity onPress={onHome} style={{ alignItems: 'center', minWidth: 76 }}>
-          <Image source={HomeIcon} style={{ width: 30, height: 30, tintColor: '#2F2F2F' }} />
-          <Text style={{ fontSize: 11, color: '#2F2F2F', marginTop: 6 }}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onWard} style={{ alignItems: 'center', minWidth: 76 }}>
-          <Image source={WardIcon} style={{ width: 30, height: 30, tintColor: '#2F2F2F' }} />
-          <Text style={{ fontSize: 11, color: '#2F2F2F', marginTop: 6 }}>Ward</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onProfile} style={{ alignItems: 'center', minWidth: 76 }}>
-          <Image source={ProfileIcon} style={{ width: 30, height: 30, tintColor: '#F2A14C' }} />
-          <Text style={{ fontSize: 11, fontWeight: '600', color: '#2F2F2F', marginTop: 6 }}>Profile</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={{ height: 6, width: 128, borderRadius: 999, alignSelf: 'center', marginTop: 16 }} />
-    </View>
-  )
-}
 
 export default function SettingsScreen() {
   const router = useRouter()
@@ -125,6 +104,7 @@ export default function SettingsScreen() {
   const role = currentProfile?.role ?? 'nurse'
   const roleLabel = ROLE_LABELS[role]
   const showReport = role === 'admin' || role === 'nurse'
+  const canManageHandovers = role === 'admin' || role === 'nurse'
   const initials = displayName
     .split(/\s+/)
     .slice(0, 2)
@@ -153,6 +133,56 @@ export default function SettingsScreen() {
     router.push('/notifications')
   }
 
+  const { startHandover, setPending } = useHandoverStore()
+  const [startingHandover, setStartingHandover] = useState(false)
+
+  const handleStartHandover = async () => {
+    if (startingHandover) return
+    Alert.alert(
+      'Start Handover',
+      'สร้างสรุปกะใหม่สำหรับวอร์ดนี้?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Start',
+          onPress: async () => {
+            setStartingHandover(true)
+            try {
+              if (USE_MOCK) {
+                setPending(MOCK_HANDOVER as unknown as ShiftHandoversRow)
+                router.push('/handover')
+                return
+              }
+              const wardId = currentProfile?.ward_id
+              const caregiverId = currentProfile?.id
+              if (!wardId || !caregiverId) {
+                Alert.alert('ไม่สามารถเริ่มได้', 'ไม่พบข้อมูลวอร์ด')
+                return
+              }
+              const now = new Date()
+              const shiftStart = new Date(now.getTime() - 8 * 60 * 60 * 1000).toISOString()
+              const shiftEnd = now.toISOString()
+              const row = await startHandover({
+                wardId,
+                caregiverId,
+                shiftStart,
+                shiftEnd,
+                summaryJson: { pending_medications: [], prescription_changes: [], prn_medications: [], alerts: [] },
+              })
+              if (row) {
+                router.push('/handover')
+              } else {
+                Alert.alert('เกิดข้อผิดพลาด', 'ไม่สามารถสร้างสรุปกะได้')
+              }
+            } finally {
+              setStartingHandover(false)
+            }
+          },
+        },
+      ],
+    )
+  }
+
   return (
     <View style={{ flex: 1 }}>
       <Tabs.Screen options={{ tabBarStyle: { display: 'none' } }} />
@@ -162,7 +192,12 @@ export default function SettingsScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <ImageBackground source={BackgroundSettingImage} style={styles.hero} resizeMode="cover">
+        <LinearGradient
+          colors={['#FFF8EF', '#F5D4AD', '#EFA65B']}
+          start={{ x: 0.08, y: 0.02 }}
+          end={{ x: 0.95, y: 1 }}
+          style={styles.hero}
+        >
           <View style={styles.heroRow}>
             <View style={styles.avatarOuter}>
               <LinearGradient
@@ -206,6 +241,22 @@ export default function SettingsScreen() {
               <View style={styles.divider} />
             </>
           ) : null}
+          {canManageHandovers ? (
+            <>
+              <MenuItem
+                icon="swap-horizontal"
+                label="Start Handover"
+                onPress={handleStartHandover}
+              />
+              <View style={styles.divider} />
+              <MenuItem
+                icon="time"
+                label="Handover History"
+                onPress={() => router.push('/handover-history')}
+              />
+              <View style={styles.divider} />
+            </>
+          ) : null}
           <MenuItem
             icon="notifications"
             label="Notifications"
@@ -236,6 +287,7 @@ export default function SettingsScreen() {
       </ScrollView>
     </SafeAreaView>
     <BottomNav
+      activeTab="profile"
       onHome={() => router.replace('/(tabs)')}
       onWard={() => router.replace('/(tabs)/patients')}
       onProfile={() => router.replace('/(tabs)/settings')}
@@ -258,7 +310,7 @@ const styles = StyleSheet.create({
   },
   hero: {
     width: Dimensions.get('window').width,
-    minHeight: 220,
+    aspectRatio: SETTINGS_HEADER_ASPECT_RATIO,
     paddingHorizontal: 18,
     paddingTop: 30,
     paddingBottom: 20,

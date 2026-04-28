@@ -10,8 +10,37 @@ import React, { useEffect } from 'react'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { useAuthStore } from '../src/stores/authStore'
 import { View, ActivityIndicator } from 'react-native'
+import * as Notifications from 'expo-notifications'
 import { USE_MOCK, initMockStores } from '../src/mocks'
-import { AUTH_BYPASS_ENABLED } from '../src/lib/devAuth'
+import { isDevAuthBypassActive } from '../src/lib/devAuth'
+import { NetworkBanner } from '../src/components/shared/NetworkBanner'
+
+function NotificationRouter() {
+  const router = useRouter()
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, unknown> | undefined
+      if (!data) return
+      const kind = typeof data.kind === 'string' ? data.kind : null
+      const patientId = typeof data.patient_id === 'string' ? data.patient_id : null
+
+      if (kind === 'refill_reminder' || kind === 'stock_alert') {
+        if (patientId) router.push(`/patient/${patientId}`)
+        else router.push('/notifications')
+      } else if (kind === 'handover_pending') {
+        router.push('/handover')
+      } else if (kind === 'medication_due') {
+        router.push('/(tabs)/schedule')
+      } else if (patientId) {
+        router.push(`/patient/${patientId}`)
+      }
+    })
+    return () => sub.remove()
+  }, [router])
+
+  return null
+}
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { session, loading, initialize } = useAuthStore()
@@ -46,7 +75,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     const inAuthGroup = protectedRoots.has(segments[0] ?? '')
     const inLoginScreen = segments[0] === 'login'
 
-    if (AUTH_BYPASS_ENABLED) {
+    if (isDevAuthBypassActive) {
       if (inLoginScreen) router.replace('/(tabs)')
     } else if (!session && inAuthGroup) {
       router.replace('/login')
@@ -69,6 +98,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 export default function RootLayout() {
   return (
     <AuthGate>
+      <NetworkBanner />
+      <NotificationRouter />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
@@ -90,9 +121,9 @@ export default function RootLayout() {
           options={{
             headerShown: true,
             title: 'สรุปกะที่ผ่านมา',
+            headerBackTitle: 'Back',
             headerTintColor: '#E8721A',
             headerTitleStyle: { fontWeight: '700' },
-            gestureEnabled: false,
           }}
         />
         <Stack.Screen
@@ -100,6 +131,16 @@ export default function RootLayout() {
           options={{
             headerShown: true,
             title: 'Scan Medication',
+            headerBackTitle: 'Back',
+            headerTintColor: '#E8721A',
+            headerTitleStyle: { fontWeight: '700' },
+          }}
+        />
+        <Stack.Screen
+          name="voice"
+          options={{
+            headerShown: true,
+            title: 'ผู้ช่วยเสียง / Voice Assistant',
             headerBackTitle: 'Back',
             headerTintColor: '#E8721A',
             headerTitleStyle: { fontWeight: '700' },

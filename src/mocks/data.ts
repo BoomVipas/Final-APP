@@ -11,6 +11,7 @@
 import type {
   UsersRow,
   PatientsRow,
+  MedicinesRow,
   NotificationLogsRow,
 } from '../types/database'
 import type { ScheduleGroup, ScheduleItem } from '../stores/medicationStore'
@@ -29,6 +30,36 @@ export const MOCK_CAREGIVER: UsersRow = {
   ward_id: 'ward-1',
   created_at: '2025-01-15T07:00:00.000Z',
 }
+
+export const MOCK_WARD_CAREGIVERS: UsersRow[] = [
+  {
+    id: 'user-002',
+    email: 'somying@pillo.care',
+    name: 'สมหญิง ใจดี',
+    phone: '081-555-0102',
+    role: 'caregiver',
+    ward_id: 'ward-1',
+    created_at: '2025-02-01T07:00:00.000Z',
+  },
+  {
+    id: 'user-003',
+    email: 'wirat@pillo.care',
+    name: 'วิรัตน์ ทองคำ',
+    phone: '081-555-0103',
+    role: 'nurse',
+    ward_id: 'ward-1',
+    created_at: '2025-02-10T07:00:00.000Z',
+  },
+  {
+    id: 'user-004',
+    email: 'malee@pillo.care',
+    name: 'มาลี ศรีจันทร์',
+    phone: '081-555-0104',
+    role: 'caregiver',
+    ward_id: 'ward-1',
+    created_at: '2025-03-05T07:00:00.000Z',
+  },
+]
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PATIENTS
@@ -82,6 +113,123 @@ export const MOCK_PATIENTS: PatientsRow[] = [
     notes: null,
     created_at: '2025-01-01T00:00:00.000Z',
     updated_at: '2025-03-01T00:00:00.000Z',
+  },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MEDICINES (catalog used by the Add Medication picker)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const MOCK_MEDICINES: MedicinesRow[] = [
+  {
+    id: 'med-001',
+    name: 'แอมโลดิปีน / Amlodipine',
+    category: 'Cardiovascular',
+    dosage_form: 'เม็ด',
+    strength: '5mg',
+    description: 'Calcium channel blocker for hypertension',
+    side_effects: null,
+    storage_instructions: null,
+    created_at: '2025-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'med-002',
+    name: 'เมทฟอร์มิน / Metformin',
+    category: 'Diabetes',
+    dosage_form: 'เม็ด',
+    strength: '500mg',
+    description: 'First-line diabetes medication',
+    side_effects: null,
+    storage_instructions: null,
+    created_at: '2025-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'med-003',
+    name: 'แอสไพริน / Aspirin',
+    category: 'Antiplatelet',
+    dosage_form: 'เม็ด',
+    strength: '81mg',
+    description: 'Low-dose antiplatelet',
+    side_effects: null,
+    storage_instructions: null,
+    created_at: '2025-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'med-004',
+    name: 'เมโทโพรลอล / Metoprolol',
+    category: 'Cardiovascular',
+    dosage_form: 'เม็ด',
+    strength: '25mg',
+    description: 'Beta blocker',
+    side_effects: null,
+    storage_instructions: null,
+    created_at: '2025-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'med-005',
+    name: 'อีนาลาพริล / Enalapril',
+    category: 'Cardiovascular',
+    dosage_form: 'เม็ด',
+    strength: '5mg',
+    description: 'ACE inhibitor',
+    side_effects: null,
+    storage_instructions: null,
+    created_at: '2025-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'med-006',
+    name: 'ฟูโรซีไมด์ / Furosemide',
+    category: 'Diuretic',
+    dosage_form: 'เม็ด',
+    strength: '40mg',
+    description: 'Loop diuretic — monitor potassium',
+    side_effects: null,
+    storage_instructions: null,
+    created_at: '2025-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'med-007',
+    name: 'อะทอร์วาสแตติน / Atorvastatin',
+    category: 'Lipid',
+    dosage_form: 'เม็ด',
+    strength: '10mg',
+    description: 'Statin for cholesterol',
+    side_effects: null,
+    storage_instructions: null,
+    created_at: '2025-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'med-008',
+    name: 'เลโวไทรอกซิน / Levothyroxine',
+    category: 'Thyroid',
+    dosage_form: 'เม็ด',
+    strength: '50mcg',
+    description: 'Take on empty stomach',
+    side_effects: null,
+    storage_instructions: null,
+    created_at: '2025-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'med-009',
+    name: 'วอร์ฟาริน / Warfarin',
+    category: 'Anticoagulant',
+    dosage_form: 'เม็ด',
+    strength: '2mg',
+    description: 'Anticoagulant — monitor INR',
+    side_effects: null,
+    storage_instructions: null,
+    created_at: '2025-01-01T00:00:00.000Z',
+  },
+  {
+    id: 'med-010',
+    name: 'พาราเซตามอล / Paracetamol',
+    category: 'Analgesic',
+    dosage_form: 'เม็ด',
+    strength: '500mg',
+    description: 'Pain and fever',
+    side_effects: null,
+    storage_instructions: null,
+    created_at: '2025-01-01T00:00:00.000Z',
   },
 ]
 
@@ -378,6 +526,45 @@ export const MOCK_HANDOVER = {
     ],
   },
 }
+
+export const MOCK_HANDOVER_HISTORY = [
+  {
+    id: 'handover-h-001',
+    ward_id: 'ward-1',
+    caregiver_id: 'user-002',
+    shift_start: new Date(Date.now() - 32 * 60 * 60 * 1000).toISOString(),
+    shift_end: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    acknowledged_at: new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString(),
+    acknowledged_by_id: 'user-001',
+    shift_notes: 'คุณสมชายปฏิเสธยา 12:00 — ติดตามมื้อเย็น',
+    created_at: new Date(Date.now() - 32 * 60 * 60 * 1000).toISOString(),
+    summary_json: { pending_medications: [], prescription_changes: [], prn_medications: [], alerts: [] },
+  },
+  {
+    id: 'handover-h-002',
+    ward_id: 'ward-1',
+    caregiver_id: 'user-003',
+    shift_start: new Date(Date.now() - 56 * 60 * 60 * 1000).toISOString(),
+    shift_end: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
+    acknowledged_at: new Date(Date.now() - 47 * 60 * 60 * 1000).toISOString(),
+    acknowledged_by_id: 'user-002',
+    shift_notes: null,
+    created_at: new Date(Date.now() - 56 * 60 * 60 * 1000).toISOString(),
+    summary_json: { pending_medications: [{ patient_name: 'ประยุทธ์ ใจดี', medication_name: 'อีนาลาพริล' }], prescription_changes: [], prn_medications: [], alerts: [] },
+  },
+  {
+    id: 'handover-h-003',
+    ward_id: 'ward-1',
+    caregiver_id: 'user-001',
+    shift_start: new Date(Date.now() - 80 * 60 * 60 * 1000).toISOString(),
+    shift_end: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
+    acknowledged_at: new Date(Date.now() - 71 * 60 * 60 * 1000).toISOString(),
+    acknowledged_by_id: 'user-003',
+    shift_notes: 'ทุกอย่างเรียบร้อย',
+    created_at: new Date(Date.now() - 80 * 60 * 60 * 1000).toISOString(),
+    summary_json: { pending_medications: [], prescription_changes: [], prn_medications: [], alerts: [] },
+  },
+]
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPUTED COUNTS

@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
-  Image,
-  ImageBackground,
+  Dimensions,
   Alert,
   Modal,
   Pressable,
@@ -23,17 +22,14 @@ import { USE_MOCK } from '../../src/mocks'
 import { supabase } from '../../src/lib/supabase'
 import type { DispenseItemsRow, DispenseSessionsRow, MealTime, PatientsRow } from '../../src/types/database'
 import { PatientAvatar } from '../../src/components/shared/PatientAvatar'
-import HeroSectionImg from '../../icons/HeroSection.png'
-import FrameIcon from '../../icons/Frame.png'
-import DocumentIcon from '../../icons/Document.png'
-import DispenseIcon from '../../icons/Dispense.png'
-import HealthIcon from '../../icons/Health.png'
-import UnionIcon from '../../icons/Union.png'
-import HomeIcon from '../../icons/Home.png'
-import WardIcon from '../../icons/Ward.png'
-import MedicineIcon from '../../icons/Medicine.png'
-import MealFrameIcon from '../../icons/MealFrame.png'
-import TickIcon from '../../icons/Tick.png'
+import DocumentIcon from '../../icons/Document.svg'
+import DispenseIcon from '../../icons/Dispense.svg'
+import HealthIcon from '../../icons/Health.svg'
+import UnionIcon from '../../icons/Ward.svg'
+import HomeIcon from '../../icons/Home.svg'
+import WardIcon from '../../icons/Ward.svg'
+import MedicineIcon from '../../icons/Medicine.svg'
+import TickIcon from '../../icons/Tick.svg'
 import {
   getMachineStatus,
   runDispenseSequence,
@@ -43,6 +39,8 @@ import {
 } from '../../src/lib/moonraker'
 
 type TabType = 'patients' | 'dispense'
+
+const SUMMARY_FRAME_WIDTH = 335
 type SortMode = 'name' | 'room' | 'urgency'
 type PatientBadge = 'urgent' | 'dispensed' | 'low_medication'
 
@@ -289,15 +287,9 @@ function InternalTab({
     >
       <View className="flex-row items-center">
         {label === 'Patients' ? (
-          <Image
-            source={DocumentIcon}
-            style={{ width: 20, height: 20, tintColor: active ? '#EFA54F' : '#2F2F2F' }}
-          />
+          <DocumentIcon width={20} height={20} color={active ? '#EFA54F' : '#2F2F2F'} />
         ) : (
-          <Image
-            source={DispenseIcon}
-            style={{ width: 20, height: 20, tintColor: active ? '#EFA54F' : '#2F2F2F' }}
-          />
+          <DispenseIcon width={20} height={20} color={active ? '#EFA54F' : '#2F2F2F'} />
         )}
         <Text
           className="text-[14px] leading-[20px] font-medium ml-2"
@@ -313,9 +305,11 @@ function InternalTab({
 function PatientRow({
   card,
   onPress,
+  onMore,
 }: {
   card: WardPatientCard
   onPress: () => void
+  onMore: () => void
 }) {
   return (
     <TouchableOpacity
@@ -332,10 +326,7 @@ function PatientRow({
         </Text>
 
         <View className="flex-row items-center mt-1.5">
-          <Image
-            source={UnionIcon}
-            style={{ width: 14, height: 14, tintColor: '#8C93A4' }}
-          />
+          <UnionIcon width={14} height={14} color="#8C93A4" />
           <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1.5">
             Room {card.room}
             {card.age !== null ? ` • Age ${card.age}` : ''}
@@ -343,10 +334,7 @@ function PatientRow({
         </View>
 
         <View className="flex-row items-center mt-1.5">
-          <Image
-          source={HealthIcon}
-          style={{ width: 14, height: 14, tintColor: '#8C93A4' }}
-        />
+          <HealthIcon width={14} height={14} color="#8C93A4" />
           <Text className="text-[13px] leading-[18px] text-[#7F8898] ml-1.5">{card.tablets} tablets</Text>
         </View>
 
@@ -359,7 +347,13 @@ function PatientRow({
         ) : null}
       </View>
 
-      <TouchableOpacity className="w-8 h-8 items-center justify-center mt-0.5">
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Actions for ${card.name}`}
+        onPress={onMore}
+        hitSlop={10}
+        className="w-12 h-12 items-center justify-center -mt-1 -mr-1"
+      >
         <Ionicons name="ellipsis-vertical" size={18} color="#4A4A4A" />
       </TouchableOpacity>
     </TouchableOpacity>
@@ -390,10 +384,11 @@ function TimeChip({
       }}
     >
       {completed ? (
-        <ImageBackground
-          source={MealFrameIcon}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          imageStyle={{ resizeMode: 'stretch' }}
+        <LinearGradient
+          colors={['#DDFBF3', '#F4FFFC']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 16, borderWidth: 1, borderColor: '#BDEFE3' }}
         />
       ) : (
         <View
@@ -408,7 +403,7 @@ function TimeChip({
       )}
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {completed ? (
-          <Image source={TickIcon} style={{ width: 16, height: 16, marginRight: 5 }} />
+          <TickIcon width={16} height={16} style={{ marginRight: 5 }} />
         ) : null}
         <Text
           style={{
@@ -457,10 +452,7 @@ function DispenseRow({
       </View>
 
       <View className="flex-row items-center ml-3">
-        <Image
-          source={MedicineIcon}
-          style={{ width: 16, height: 16, tintColor: '#F1A44F' }}
-        />
+        <MedicineIcon width={16} height={16} color="#F1A44F" />
         <Text className="text-[14px] leading-[20px] font-semibold text-[#F1A44F] ml-1.5">
           {card.tablets} tablets
         </Text>
@@ -482,15 +474,12 @@ function BottomNav({
     <View className="bg-white border-t border-[#ECE5DB] px-8 pt-3 pb-5">
       <View className="flex-row items-center justify-between">
         <TouchableOpacity onPress={onHome} className="items-center min-w-[76px]">
-          <Image
-            source={HomeIcon}
-            style={{ width: 30, height: 30, tintColor: '#2F2F2F' }}
-          />
+          <HomeIcon width={30} height={30} color="#2F2F2F" />
           <Text className="text-[11px] leading-[16px] text-[#2F2F2F] mt-1.5">Home</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={onWard} className="items-center min-w-[76px]">
-          <Image source={WardIcon} style={{ width: 30, height: 30, tintColor: '#F2A14C' }} />
+          <WardIcon width={30} height={30} color="#F2A14C" />
           <Text className="text-[11px] leading-[16px] font-semibold text-[#2F2F2F] mt-1.5">Ward</Text>
         </TouchableOpacity>
 
@@ -715,10 +704,15 @@ function DispenseModal({
 export default function WardDetailScreen() {
   const router = useRouter()
   const { id } = useLocalSearchParams<{ id: string }>()
+  const screenWidth = Dimensions.get('window').width
+  const summaryFrameWidth = Math.min(SUMMARY_FRAME_WIDTH, screenWidth - 32)
+  const summaryFrameLeft = (screenWidth - summaryFrameWidth) / 2
   const { user } = useAuthStore()
   const {
     patients,
     fetchPatients,
+    urgentPatientIds,
+    toggleUrgent,
     loading: patientLoading,
   } = usePatientStore()
   const {
@@ -850,7 +844,9 @@ export default function WardDetailScreen() {
       const quantityScope = patientFocusItems.length > 0 ? patientFocusItems : patientDailyItems
       const badges: PatientBadge[] = []
 
-      if (statusScope.some((item) => item.status !== 'confirmed')) {
+      const hasPending = statusScope.some((item) => item.status !== 'confirmed')
+      const manuallyUrgent = Boolean(urgentPatientIds[meta.id])
+      if (hasPending || manuallyUrgent) {
         badges.push('urgent')
       } else if (statusScope.length > 0) {
         badges.push('dispensed')
@@ -867,7 +863,7 @@ export default function WardDetailScreen() {
     })
 
     return cards
-  }, [allItems, focusItems, patientMetaById])
+  }, [allItems, focusItems, patientMetaById, urgentPatientIds])
 
   const usingDemoPatients = livePatientCards.length === 0 && allItems.length === 0 && patients.length === 0
   const patientCards = usingDemoPatients ? DEMO_PATIENTS : livePatientCards
@@ -1104,9 +1100,10 @@ export default function WardDetailScreen() {
       },
     )
 
-    // Log to medication_logs for each dispensed patient
+    // Log to medication_logs + dispense_items, and decrement inventory for each dispensed patient
     const today = new Date().toISOString()
-    for (const job of dispenseJobs) {
+    for (let i = 0; i < dispenseJobs.length; i += 1) {
+      const job = dispenseJobs[i]
       const rx = await supabase
         .from('patient_prescriptions')
         .select('id, medicine_id')
@@ -1116,17 +1113,46 @@ export default function WardDetailScreen() {
         .limit(1)
         .maybeSingle()
 
-      if (rx.data) {
-        await supabase.from('medication_logs').insert({
-          prescription_id: rx.data.id,
-          patient_id:      job.patientId,
-          medicine_id:     rx.data.medicine_id,
-          caregiver_id:    user?.id ?? '',
-          meal_time:       activeTimeSlot,
-          status:          'confirmed',
-          method:          'normal',
-          administered_at: today,
+      if (!rx.data) continue
+
+      await supabase.from('medication_logs').insert({
+        prescription_id: rx.data.id,
+        patient_id:      job.patientId,
+        medicine_id:     rx.data.medicine_id,
+        caregiver_id:    user?.id ?? '',
+        meal_time:       activeTimeSlot,
+        status:          'confirmed',
+        method:          'normal',
+        administered_at: today,
+      })
+
+      if (session?.id) {
+        await supabase.from('dispense_items').insert({
+          session_id:    session.id,
+          patient_id:    job.patientId,
+          medicine_id:   rx.data.medicine_id,
+          slot_index:    job.cabinet,
+          meal_time:     activeTimeSlot,
+          quantity:      job.tablets,
+          status:        'dispensed',
+          dispensed_at:  today,
         })
+      }
+
+      const { data: slotRow } = await supabase
+        .from('cabinet_slots')
+        .select('id, quantity_remaining')
+        .eq('medicine_id', rx.data.medicine_id)
+        .eq('cabinet_position', job.cabinet)
+        .limit(1)
+        .maybeSingle()
+
+      if (slotRow?.id) {
+        const remaining = Math.max(0, (slotRow.quantity_remaining ?? 0) - job.tablets)
+        await supabase
+          .from('cabinet_slots')
+          .update({ quantity_remaining: remaining })
+          .eq('id', slotRow.id)
       }
     }
 
@@ -1175,11 +1201,8 @@ export default function WardDetailScreen() {
               </View>
             </View>
 
-            <ImageBackground
-              source={FrameIcon}
-              style={{ position: 'absolute', left: 16, right: 16, bottom: -40 }}
-              imageStyle={{ borderRadius: 24, width: '100%', height: '100%' }}
-              resizeMode="stretch"
+            <View
+              style={[CARD_SHADOW, { position: 'absolute', left: summaryFrameLeft, width: summaryFrameWidth, bottom: -40, borderRadius: 24, backgroundColor: '#FFFFFF', overflow: 'hidden' }]}
             >
               <View className="flex-row">
                 <SummaryStat value={statPatients} label="Patients" borderRight />
@@ -1237,6 +1260,50 @@ export default function WardDetailScreen() {
                     card={card}
                     onPress={() => {
                       if (!card.isFallback) router.push(`/patient/${card.id}`)
+                    }}
+                    onMore={() => {
+                      if (card.isFallback) return
+                      const isUrgent = Boolean(urgentPatientIds[card.id])
+                      Alert.alert(card.name, 'Choose an action for this patient.', [
+                        { text: 'View profile', onPress: () => router.push(`/patient/${card.id}`) },
+                        {
+                          text: isUrgent ? 'Clear urgent flag' : 'Mark urgent',
+                          onPress: () => {
+                            const nowUrgent = toggleUrgent(card.id)
+                            Alert.alert(
+                              card.name,
+                              nowUrgent
+                                ? 'Patient marked as urgent.'
+                                : 'Urgent flag cleared.',
+                            )
+                          },
+                        },
+                        {
+                          text: 'Daily family update',
+                          onPress: () =>
+                            router.push({
+                              pathname: '/daily-update',
+                              params: { patientId: card.id, patientName: card.name },
+                            }),
+                        },
+                        {
+                          text: '🚨 Emergency: Notify family via LINE',
+                          onPress: () =>
+                            router.push({
+                              pathname: '/notify-family',
+                              params: { patientId: card.id, patientName: card.name },
+                            }),
+                        },
+                        {
+                          text: 'Manage family contacts',
+                          onPress: () =>
+                            router.push({
+                              pathname: '/family-contacts',
+                              params: { patientId: card.id, patientName: card.name },
+                            }),
+                        },
+                        { text: 'Cancel', style: 'cancel' },
+                      ])
                     }}
                   />
                 ))

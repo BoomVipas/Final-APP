@@ -258,6 +258,8 @@ export interface ShiftHandoversRow {
   shift_end: string
   summary_json: Record<string, unknown>
   acknowledged_at: string | null
+  acknowledged_by_id: string | null
+  shift_notes: string | null
   created_at: string
 }
 
@@ -269,6 +271,8 @@ export interface ShiftHandoversInsert {
   shift_end: string
   summary_json?: Record<string, unknown>
   acknowledged_at?: string | null
+  acknowledged_by_id?: string | null
+  shift_notes?: string | null
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -285,6 +289,8 @@ export interface FamilyContactsRow {
   notification_preferences: Record<string, unknown>
   quiet_hours_start: string | null
   quiet_hours_end: string | null
+  link_token: string
+  linked_at: string | null
   created_at: string
 }
 

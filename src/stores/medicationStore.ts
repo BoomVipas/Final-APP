@@ -6,7 +6,15 @@
 
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
-import type { MealTime, MedicationLogsInsert } from '../types/database'
+import { checkDuplicateDose, type MedicationLogEntry } from '../lib/duplicateDetection'
+import type { MealTime, MedicationLogsInsert, MedicationLogsRow } from '../types/database'
+
+const DUPLICATE_WINDOW_MINUTES = 60
+
+export interface DuplicateCheckResult {
+  isDuplicate: boolean
+  conflictingLog?: MedicationLogsRow
+}
 
 export interface ScheduleItem {
   prescription_id: string
@@ -47,8 +55,19 @@ interface MedicationState {
   loading: boolean
   error: string | null
   fetchSchedule: (wardId: string, date: string) => Promise<void>
-  confirmDose: (item: ScheduleItem, caregiverId: string) => Promise<void>
-  refuseDose: (item: ScheduleItem, caregiverId: string, reason: string) => Promise<void>
+  checkDuplicate: (item: ScheduleItem) => Promise<DuplicateCheckResult>
+  confirmDose: (
+    item: ScheduleItem,
+    caregiverId: string,
+    options?: { force?: boolean; method?: MedicationLogsInsert['method']; notes?: string | null },
+  ) => Promise<void>
+  refuseDose: (
+    item: ScheduleItem,
+    caregiverId: string,
+    reason: string,
+    notes?: string | null,
+  ) => Promise<void>
+  skipDose: (item: ScheduleItem, caregiverId: string, notes?: string | null) => Promise<void>
   subscribeToRealtime: (wardId: string, date: string) => () => void
   clearError: () => void
 }
@@ -178,20 +197,52 @@ export const useMedicationStore = create<MedicationState>((set, get) => ({
     }
   },
 
-  confirmDose: async (item: ScheduleItem, caregiverId: string) => {
-    // Check for existing confirmed log in the last 60 minutes (duplicate guard)
-    const windowStart = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-    const { data: existing } = await supabase
+  checkDuplicate: async (item: ScheduleItem) => {
+    const windowStart = new Date(Date.now() - DUPLICATE_WINDOW_MINUTES * 60 * 1000).toISOString()
+    const { data: existing, error } = await supabase
       .from('medication_logs')
-      .select('id')
+      .select('id, prescription_id, patient_id, medicine_id, caregiver_id, administered_at, meal_time, status, method, refusal_reason, conflict_flag, notes, created_at')
       .eq('prescription_id', item.prescription_id)
       .eq('meal_time', item.meal_time)
       .eq('status', 'confirmed')
       .gte('administered_at', windowStart)
-      .limit(1)
+      .order('administered_at', { ascending: false })
+      .limit(5)
 
-    const isDuplicate = (existing ?? []).length > 0
+    if (error) throw error
 
+    const candidates: MedicationLogEntry[] = (existing ?? []).map((row) => ({
+      id: row.id,
+      scheduleId: row.prescription_id,
+      administeredAt: new Date(row.administered_at),
+      status: row.status,
+    }))
+
+    const result = checkDuplicateDose(item.prescription_id, DUPLICATE_WINDOW_MINUTES, candidates)
+    if (!result.isDuplicate || !result.conflictingLog) {
+      return { isDuplicate: false }
+    }
+
+    const conflictingLog = (existing ?? []).find((row) => row.id === result.conflictingLog!.id)
+    return { isDuplicate: true, conflictingLog: conflictingLog as MedicationLogsRow | undefined }
+  },
+
+  confirmDose: async (item, caregiverId, options) => {
+    const force = options?.force === true
+    let conflictFlag = false
+
+    if (!force) {
+      const { isDuplicate } = await get().checkDuplicate(item)
+      if (isDuplicate) {
+        const err = new Error('DUPLICATE_DOSE') as Error & { code?: string }
+        err.code = 'DUPLICATE_DOSE'
+        throw err
+      }
+    } else {
+      conflictFlag = true
+    }
+
+    const trimmedNotes = options?.notes?.trim()
     const log: MedicationLogsInsert = {
       prescription_id: item.prescription_id,
       patient_id: item.patient_id,
@@ -199,15 +250,22 @@ export const useMedicationStore = create<MedicationState>((set, get) => ({
       caregiver_id: caregiverId,
       meal_time: item.meal_time,
       status: 'confirmed',
-      method: 'normal',
-      conflict_flag: isDuplicate,
+      method: options?.method ?? 'normal',
+      conflict_flag: conflictFlag,
+      notes: trimmedNotes ? trimmedNotes : null,
     }
 
     const { error } = await supabase.from('medication_logs').insert(log)
     if (error) throw error
   },
 
-  refuseDose: async (item: ScheduleItem, caregiverId: string, reason: string) => {
+  refuseDose: async (
+    item: ScheduleItem,
+    caregiverId: string,
+    reason: string,
+    notes?: string | null,
+  ) => {
+    const trimmedNotes = notes?.trim()
     const log: MedicationLogsInsert = {
       prescription_id: item.prescription_id,
       patient_id: item.patient_id,
@@ -217,14 +275,40 @@ export const useMedicationStore = create<MedicationState>((set, get) => ({
       status: 'refused',
       method: 'normal',
       refusal_reason: reason,
+      notes: trimmedNotes ? trimmedNotes : null,
+    }
+    const { error } = await supabase.from('medication_logs').insert(log)
+    if (error) throw error
+  },
+
+  skipDose: async (item: ScheduleItem, caregiverId: string, notes?: string | null) => {
+    const trimmedNotes = notes?.trim()
+    const log: MedicationLogsInsert = {
+      prescription_id: item.prescription_id,
+      patient_id: item.patient_id,
+      medicine_id: item.medicine_id,
+      caregiver_id: caregiverId,
+      meal_time: item.meal_time,
+      status: 'skipped',
+      method: 'normal',
+      notes: trimmedNotes ? trimmedNotes : null,
     }
     const { error } = await supabase.from('medication_logs').insert(log)
     if (error) throw error
   },
 
   subscribeToRealtime: (wardId: string, date: string) => {
+    const topic = `medication_logs_ward_${wardId}`
+    // StrictMode double-mounts and effect re-runs can leave the prior channel
+    // alive in supabase-js's internal map. Calling .channel(topic) returns the
+    // existing already-subscribed instance and .on() then throws. Tear it down
+    // first so we always start from a clean state.
+    supabase.getChannels()
+      .filter((c) => c.topic === `realtime:${topic}`)
+      .forEach((c) => { supabase.removeChannel(c) })
+
     const channel = supabase
-      .channel(`medication_logs_ward_${wardId}`)
+      .channel(topic)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'medication_logs' }, () => {
         get().fetchSchedule(wardId, date)
       })

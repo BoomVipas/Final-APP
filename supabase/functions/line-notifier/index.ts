@@ -13,11 +13,16 @@ type EventType =
   | 'prescription_changed'
   | 'appointment_reminder'
   | 'weekly_summary'
+  | 'caregiver_message'
+  | 'test_message'
+  | 'daily_update'
 
 interface RequestBody {
   patient_id: string
   event_type: EventType
   message_data: Record<string, unknown>
+  // Optional: send to a single contact only (used by the "Send test" button).
+  target_contact_id?: string
 }
 
 interface FamilyContact {
@@ -378,6 +383,299 @@ function buildFlexMessage(
       }
     }
 
+    case 'daily_update': {
+      const patientName = String(data.patient_name ?? '')
+      const caregiverName = String(data.caregiver_name ?? 'ผู้ดูแล')
+      const dateBE = String(data.date_be ?? '')
+      const time = String(data.time ?? '')
+      const photoUrl = typeof data.photo_url === 'string' && data.photo_url ? data.photo_url : null
+
+      const vitals = (data.vitals ?? null) as Record<string, string> | null
+      const meal = (data.meal ?? null) as Record<string, string> | null
+      const shift = (data.shift ?? null) as Record<string, string> | null
+
+      const sections: Array<Record<string, unknown>> = []
+
+      if (vitals) {
+        const vitalLines: Array<Record<string, unknown>> = []
+        const pushLine = (label: string, value: string | undefined, unit: string) => {
+          if (!value) return
+          vitalLines.push({
+            type: 'box',
+            layout: 'baseline',
+            contents: [
+              { type: 'text', text: label, size: 'sm', color: '#666666', flex: 2 },
+              { type: 'text', text: `${value}${unit}`, size: 'sm', color: '#1B5E20', weight: 'bold', flex: 4 },
+            ],
+            spacing: 'sm',
+          })
+        }
+        pushLine('T', vitals.T, '°C')
+        pushLine('P', vitals.P, ' bpm')
+        pushLine('R', vitals.R, ' ครั้ง/นาที')
+        if (vitals.BP_sys && vitals.BP_dia) {
+          pushLine('BP', `${vitals.BP_sys}/${vitals.BP_dia}`, ' mmHg')
+        }
+        pushLine('O₂', vitals.O2, ' %')
+        pushLine('Urine', vitals.urine, ' ml')
+        pushLine('Stool', vitals.stool, ' ครั้ง')
+
+        sections.push({
+          type: 'box',
+          layout: 'vertical',
+          margin: 'lg',
+          contents: [
+            { type: 'text', text: '🌻 วัด V/S 🌻', weight: 'bold', size: 'md', color: '#8E4B14', align: 'center' },
+            { type: 'text', text: `วันที่ ${dateBE}  เวลา ${time} น.`, size: 'xs', color: '#888888', align: 'center', margin: 'xs' },
+            { type: 'separator', margin: 'sm' },
+            ...vitalLines,
+          ],
+        })
+      }
+
+      if (meal) {
+        const mealTypeLabel = meal.meal_type === 'breakfast'
+          ? 'อาหารมื้อเช้า'
+          : meal.meal_type === 'noon'
+            ? 'อาหารมื้อกลางวัน'
+            : meal.meal_type === 'evening'
+              ? 'อาหารมื้อเย็น'
+              : 'มื้ออาหาร'
+        const portionLabel = meal.portion === 'all'
+          ? '✅ ทานหมด'
+          : meal.portion === 'half'
+            ? '🟡 ทานครึ่งหนึ่ง'
+            : meal.portion === 'little'
+              ? '🟠 ทานน้อย'
+              : meal.portion === 'none'
+                ? '🔴 ไม่ทาน'
+                : ''
+
+        sections.push({
+          type: 'box',
+          layout: 'vertical',
+          margin: 'lg',
+          contents: [
+            { type: 'text', text: `🍽️ ${mealTypeLabel}`, weight: 'bold', size: 'md', color: '#8E4B14' },
+            ...(portionLabel
+              ? [{ type: 'text', text: portionLabel, size: 'sm', color: '#444444', margin: 'sm' } as Record<string, unknown>]
+              : []),
+            ...(meal.food
+              ? [{ type: 'text', text: meal.food, size: 'sm', color: '#444444', wrap: true, margin: 'sm' } as Record<string, unknown>]
+              : []),
+          ],
+        })
+      }
+
+      if (shift) {
+        const shiftLetter = shift.shift_letter ?? ''
+        const shiftLabel = shiftLetter === 'M'
+          ? 'เวรเช้า (M)'
+          : shiftLetter === 'D'
+            ? 'เวรกลางวัน (D)'
+            : shiftLetter === 'N'
+              ? 'เวรกลางคืน (N)'
+              : 'ส่งเวร'
+        const sleepLabel = shift.sleep === 'good'
+          ? '😴 หลับดี'
+          : shift.sleep === 'restless'
+            ? '😟 กระสับกระส่าย'
+            : shift.sleep === 'frequent_waking'
+              ? '🔁 ตื่นบ่อย'
+              : shift.sleep === 'no_sleep'
+                ? '⚠️ ไม่ได้นอน'
+                : ''
+
+        sections.push({
+          type: 'box',
+          layout: 'vertical',
+          margin: 'lg',
+          contents: [
+            { type: 'text', text: `📋 ${shiftLabel}`, weight: 'bold', size: 'md', color: '#8E4B14' },
+            ...(sleepLabel
+              ? [{ type: 'text', text: sleepLabel, size: 'sm', color: '#444444', margin: 'sm' } as Record<string, unknown>]
+              : []),
+            ...(shift.notes
+              ? [{ type: 'text', text: shift.notes, size: 'sm', color: '#444444', wrap: true, margin: 'sm' } as Record<string, unknown>]
+              : []),
+          ],
+        })
+      }
+
+      const bubble: Record<string, unknown> = {
+        type: 'bubble',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            { type: 'text', text: '📋 รายงานประจำวัน', weight: 'bold', size: 'lg', color: '#8E4B14' },
+            { type: 'text', text: `ผู้ป่วย: ${patientName}`, size: 'sm', color: '#444444', margin: 'xs' },
+          ],
+          backgroundColor: '#FFF3E5',
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            ...sections,
+            { type: 'separator', margin: 'lg' },
+            {
+              type: 'text',
+              text: `— ${caregiverName} ค่ะ`,
+              size: 'xs',
+              color: '#888888',
+              align: 'end',
+              margin: 'md',
+            },
+          ],
+        },
+      }
+
+      if (photoUrl) {
+        bubble.hero = {
+          type: 'image',
+          url: photoUrl,
+          size: 'full',
+          aspectRatio: '4:3',
+          aspectMode: 'cover',
+        }
+      }
+
+      return {
+        type: 'flex',
+        altText: `รายงานประจำวัน ${patientName} (${dateBE})`,
+        contents: bubble,
+      }
+    }
+
+    case 'caregiver_message': {
+      const patientName = String(data.patient_name ?? '')
+      const senderName = String(data.sender_name ?? 'PILLo Caregiver')
+      const messageText = String(data.text ?? '').slice(0, 1000)
+
+      return {
+        type: 'flex',
+        altText: `ข้อความจากผู้ดูแล: ${patientName || senderName}`,
+        contents: {
+          type: 'bubble',
+          header: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: '💬 ข้อความจากผู้ดูแล',
+                weight: 'bold',
+                color: '#8E4B14',
+                size: 'lg',
+              },
+            ],
+            backgroundColor: '#FFF3E5',
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              ...(patientName
+                ? [
+                    {
+                      type: 'text' as const,
+                      text: `ผู้ป่วย: ${patientName}`,
+                      weight: 'bold' as const,
+                      size: 'md' as const,
+                      wrap: true,
+                    },
+                    {
+                      type: 'separator' as const,
+                      margin: 'md' as const,
+                    },
+                  ]
+                : []),
+              {
+                type: 'text',
+                text: messageText,
+                size: 'sm',
+                wrap: true,
+                margin: 'md',
+                color: '#333333',
+              },
+              {
+                type: 'separator',
+                margin: 'lg',
+              },
+              {
+                type: 'text',
+                text: `— ${senderName}`,
+                size: 'xs',
+                color: '#888888',
+                margin: 'md',
+              },
+            ],
+          },
+        },
+      }
+    }
+
+    case 'test_message': {
+      const patientName = String(data.patient_name ?? '')
+      return {
+        type: 'flex',
+        altText: 'PILLo test message',
+        contents: {
+          type: 'bubble',
+          header: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: '✅ การเชื่อมต่อใช้งานได้',
+                weight: 'bold',
+                color: '#1B5E20',
+                size: 'lg',
+              },
+            ],
+            backgroundColor: '#E8F5E9',
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: 'นี่คือข้อความทดสอบจากระบบ PILLo',
+                size: 'sm',
+                wrap: true,
+              },
+              {
+                type: 'text',
+                text: '(This is a test message from PILLo. Connection works.)',
+                size: 'xs',
+                color: '#666666',
+                wrap: true,
+                margin: 'sm',
+              },
+              ...(patientName
+                ? [
+                    {
+                      type: 'separator' as const,
+                      margin: 'md' as const,
+                    },
+                    {
+                      type: 'text' as const,
+                      text: `ผู้ป่วย: ${patientName}`,
+                      size: 'sm' as const,
+                      margin: 'md' as const,
+                      color: '#444444' as const,
+                    },
+                  ]
+                : []),
+            ],
+          },
+        },
+      }
+    }
+
     default: {
       return {
         type: 'text',
@@ -425,7 +723,7 @@ Deno.serve(async (req: Request) => {
     return errorResponse('Invalid JSON body')
   }
 
-  const { patient_id, event_type, message_data } = body
+  const { patient_id, event_type, message_data, target_contact_id } = body
   if (!patient_id) return errorResponse('patient_id is required')
   if (!event_type) return errorResponse('event_type is required')
   if (!message_data) return errorResponse('message_data is required')
@@ -436,6 +734,9 @@ Deno.serve(async (req: Request) => {
     'prescription_changed',
     'appointment_reminder',
     'weekly_summary',
+    'caregiver_message',
+    'test_message',
+    'daily_update',
   ]
   if (!validEventTypes.includes(event_type)) {
     return errorResponse(`Invalid event_type. Must be one of: ${validEventTypes.join(', ')}`)
@@ -448,11 +749,17 @@ Deno.serve(async (req: Request) => {
 
   try {
     // ── 1. Fetch family contacts with LINE configured ─────────────────────
-    const { data: contacts, error: contactErr } = await serviceClient
+    let contactsQuery = serviceClient
       .from('family_contacts')
       .select('id, patient_id, line_user_id, name, quiet_hours_start, quiet_hours_end')
       .eq('patient_id', patient_id)
       .not('line_user_id', 'is', null)
+
+    if (target_contact_id) {
+      contactsQuery = contactsQuery.eq('id', target_contact_id)
+    }
+
+    const { data: contacts, error: contactErr } = await contactsQuery
 
     if (contactErr) throw new Error(`Contacts fetch failed: ${contactErr.message}`)
     if (!contacts || contacts.length === 0) {
@@ -463,8 +770,14 @@ Deno.serve(async (req: Request) => {
     const flexMessage = buildFlexMessage(event_type, message_data)
 
     // ── 3. Send to each contact (respecting quiet hours) ──────────────────
+    // Critical messages bypass quiet hours. Caregiver-authored messages also
+    // bypass quiet hours because the caregiver is making an explicit decision
+    // to send right now.
     const isCritical =
-      event_type === 'stock_critical'
+      event_type === 'stock_critical' ||
+      event_type === 'caregiver_message' ||
+      event_type === 'test_message' ||
+      event_type === 'daily_update'
 
     const result: SendResult = { sent: 0, failed: 0, skipped: 0 }
     const notifInserts: object[] = []

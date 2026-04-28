@@ -72,6 +72,20 @@ export async function getMachineStatus(): Promise<MachineStatus> {
   }
 }
 
+// ─── Standalone hardware controls ────────────────────────────────────────────
+
+export async function homeAllAxes(): Promise<void> {
+  await gcodePost('G28')
+  await delay(2000)
+}
+
+export async function moveCabinetToFill(cabinet: number): Promise<void> {
+  const pos = CABINET_POSITIONS[cabinet]
+  if (!pos) throw new Error(`Invalid cabinet number: ${cabinet}`)
+  await gcodePost(`G90`)
+  await gcodePost(`G1 Y${pos.fillY} F${FEEDRATE_XY}`)
+}
+
 // ─── Low-level gripper helpers ───────────────────────────────────────────────
 
 async function gripperPickAndDeliver(): Promise<void> {
@@ -114,14 +128,19 @@ export async function clearAllLeds(totalSlots = 8): Promise<void> {
 export async function runDispenseSequence(
   cabinets: { cabinet: number; patientName: string }[],
   onProgress: (event: DispenseProgressEvent) => void,
-): Promise<void> {
-  if (cabinets.length === 0) return
+  startY?: number,
+): Promise<number> {
+  if (cabinets.length === 0) return startY ?? 0
 
-  onProgress({ type: 'homing', message: 'Homing all axes...' })
-  await gcodePost('G28')
-  await delay(2000)
-
-  let currentY = 0
+  let currentY: number
+  if (startY === undefined) {
+    onProgress({ type: 'homing', message: 'Homing all axes...' })
+    await gcodePost('G28')
+    await delay(2000)
+    currentY = 0
+  } else {
+    currentY = startY
+  }
 
   for (let i = 0; i < cabinets.length; i++) {
     const { cabinet, patientName } = cabinets[i]
@@ -173,6 +192,7 @@ export async function runDispenseSequence(
 
   await clearAllLeds()
   onProgress({ type: 'done', message: 'All medications dispensed successfully' })
+  return currentY
 }
 
 export async function emergencyStop(): Promise<void> {

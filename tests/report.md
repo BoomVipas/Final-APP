@@ -1,5 +1,44 @@
 # PILLo QA Test Report
-Date: 2026-03-24
+Date: 2026-03-24 · Updated: 2026-04-27 (full-app QA pass)
+
+---
+
+## 2026-04-27 QA pass — navigation, dead buttons, touch targets
+
+### Reported issue
+> "I'm at the handover feature, and I can't tap to go back to a previous tab before I come into this handover feature."
+
+**Root cause.** [app/handover.tsx](app/handover.tsx) trapped the user on the screen:
+- A `BackHandler.hardwareBackPress` listener returned `true` (swallowing the event) until `acknowledged` was set, blocking Android hardware back.
+- [app/_layout.tsx#L96](app/_layout.tsx#L96) set `gestureEnabled: false` on the `handover` route, killing the iOS swipe-back.
+- `handleDismiss()` blocked `router.replace('/(tabs)')` with an Alert until ack.
+- The header's default back button was inert because `BackHandler` ate the event before navigation could process it.
+
+The intent of "must acknowledge handover" was to gate **app dismissal at shift change**, not to trap a user who tapped the home-screen handover CTA. Fix restores normal back navigation and leaves enforcement to the upstream redirect on app open / home CTA.
+
+**Fix.**
+- Removed the `BackHandler` listener from [app/handover.tsx](app/handover.tsx).
+- Removed `gestureEnabled: false` and added `headerBackTitle: 'Back'` to the handover Stack.Screen in [app/_layout.tsx#L88-L97](app/_layout.tsx#L88-L97).
+- Simplified `handleDismiss()` — the post-ack "ไปหน้าหลัก" button now navigates straight back without re-checking ack state.
+
+### Other issues fixed in this pass
+| File | Issue | Fix |
+|:---|:---|:---|
+| [app/patient/[id].tsx#L546-L558](app/patient/%5Bid%5D.tsx#L546-L558) | Medication-card ellipsis: no `onPress`, 32×32 touch target | Wired to `showMedicationActions()` Alert; bumped to 48×48 |
+| [app/patient/[id].tsx#L614-L627](app/patient/%5Bid%5D.tsx#L614-L627) | "Set Reminder" button: no `onPress`, `minHeight: 36` | Wired to `handleSetReminder()` Alert; `minHeight: 48` |
+| [app/ward/[id].tsx#L348-L350](app/ward/%5Bid%5D.tsx#L348-L350) | Patient-row ellipsis: no `onPress`, nested in row TouchableOpacity (touch leaked through) | Added `onMore` prop to `PatientRow`; wired call site at [#L1212](app/ward/%5Bid%5D.tsx#L1212); bumped to 48×48 |
+
+### Verification
+- `npx tsc --noEmit` → zero errors in `app/`, `src/`, `__tests__/` (pre-existing errors in unrelated `claude-buddy/` directory are out of scope).
+
+### Patterns to enforce going forward
+1. **No screen pushed on top of `(tabs)` may trap the user.** No `gestureEnabled: false` without a visible header back button. No `BackHandler` listener that returns `true` unconditionally. If a flow truly needs to be enforced, redirect on app cold-start instead of trapping mid-session.
+2. **Every `TouchableOpacity` / `Pressable` must have a non-empty `onPress`.** A button without a handler reads as broken UI. If "not yet implemented," wire it to an Alert that says so — don't ship a silent button.
+3. **Minimum touch target 48×48dp on every interactive element** (CLAUDE.md §UX Constraints). Older fingers, gloved hands. Audit any `width:` / `height:` / `minHeight:` under 48 on `TouchableOpacity` / `Pressable` before merge.
+4. **Bilingual consistency.** Three screens still mix patterns — `handover-history.tsx` has English-only "Handover History" against an otherwise Thai-primary screen; `(tabs)/index.tsx` and `(tabs)/patients.tsx` are English-only. CLAUDE.md mandates Thai-primary, English-secondary. Not blocking but a follow-up pass is warranted.
+5. **Inline demo data should live in `src/mocks/`.** [app/(tabs)/index.tsx#L537-L600](app/%28tabs%29/index.tsx#L537-L600) and the ward-card list in [app/(tabs)/patients.tsx](app/%28tabs%29/patients.tsx) ship inline literals ("Mr. Somchai Wongsri" etc.). They are correctly gated by `visualFallback`, but inline literals make the code hard to scan and risk leaking into production rendering paths.
+
+---
 
 ---
 
