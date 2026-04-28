@@ -42,7 +42,7 @@ import {
 
 type TabType = 'patients' | 'dispense'
 
-const SUMMARY_FRAME_WIDTH = 335
+const SUMMARY_FRAME_WIDTH = 370
 type SortMode = 'name' | 'room' | 'urgency'
 type PatientBadge = 'urgent' | 'dispensed' | 'low_medication'
 
@@ -268,6 +268,7 @@ function SummaryStat({ value, label, borderRight }: { value: number; label: stri
     </View>
   )
 }
+
 
 function InternalTab({
   active,
@@ -705,9 +706,9 @@ function DispenseModal({
 
 export default function WardDetailScreen() {
   const router = useRouter()
-  const { id } = useLocalSearchParams<{ id: string }>()
+  const { id, label } = useLocalSearchParams<{ id: string; label?: string }>()
   const screenWidth = Dimensions.get('window').width
-  const summaryFrameWidth = Math.min(SUMMARY_FRAME_WIDTH, screenWidth - 32)
+  const summaryFrameWidth = Math.min(SUMMARY_FRAME_WIDTH, screenWidth - 16)
   const summaryFrameLeft = (screenWidth - summaryFrameWidth) / 2
   const { user } = useAuthStore()
   const {
@@ -723,6 +724,7 @@ export default function WardDetailScreen() {
     loading: scheduleLoading,
   } = useMedicationStore()
 
+  const [resolvedWardLabel, setResolvedWardLabel] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabType>('patients')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortMode, setSortMode] = useState<SortMode>('urgency')
@@ -743,8 +745,25 @@ export default function WardDetailScreen() {
 
   const routeWardId = typeof id === 'string' ? id : ''
   const effectiveWardId = resolveWardId(routeWardId, user?.ward_id)
-  const wardLabel = formatWardLabel(routeWardId || effectiveWardId)
+  const wardLabel = resolvedWardLabel ?? label ?? formatWardLabel(routeWardId || effectiveWardId)
   const today = new Date().toISOString().slice(0, 10)
+
+  useEffect(() => {
+    async function resolveLabel() {
+      const [{ data: patientRows }, { data: caregiverRows }] = await Promise.all([
+        supabase.from('patients').select('ward_id').not('ward_id', 'is', null),
+        supabase.from('caregivers').select('ward_id').not('ward_id', 'is', null),
+      ])
+      const allIds = [
+        ...(patientRows ?? []).map((r) => r.ward_id as string),
+        ...(caregiverRows ?? []).map((r) => r.ward_id as string),
+      ].filter(Boolean)
+      const sorted = [...new Set(allIds)].sort()
+      const index = sorted.indexOf(effectiveWardId)
+      if (index >= 0) setResolvedWardLabel(`Ward ${String.fromCharCode(65 + index)}`)
+    }
+    if (effectiveWardId) resolveLabel()
+  }, [effectiveWardId])
 
   const fetchDispenseData = useCallback(async () => {
     if (!effectiveWardId || USE_MOCK) return
@@ -1177,12 +1196,13 @@ export default function WardDetailScreen() {
 
       <SafeAreaView className="flex-1 bg-[#F7F2EA]" edges={['top', 'left', 'right']}>
         <View className="flex-1">
+          {/* Background extends to cover header + stats + tabs */}
+          <Image
+            source={HeroSectionImg}
+            style={{ position: 'absolute', top: 0, left: 0, width: screenWidth, height: 330 }}
+            resizeMode="cover"
+          />
           <View className="relative h-[220px]">
-            <Image
-              source={HeroSectionImg}
-              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
-              resizeMode="cover"
-            />
 
             <TouchableOpacity
               onPress={() => router.back()}
@@ -1191,7 +1211,7 @@ export default function WardDetailScreen() {
               <Ionicons name="chevron-back" size={26} color="#313131" />
             </TouchableOpacity>
 
-            <View className="absolute left-6 right-6 bottom-[58px]">
+            <View className="absolute left-6 right-6 bottom-[100px]">
               <Text className="text-[30px] leading-[36px] font-bold text-[#303030]">
                 {wardLabel}
               </Text>
@@ -1204,16 +1224,22 @@ export default function WardDetailScreen() {
             </View>
 
             <View
-              style={[CARD_SHADOW, { position: 'absolute', left: summaryFrameLeft, width: summaryFrameWidth, bottom: -40, borderRadius: 24, backgroundColor: '#FFFFFF', overflow: 'hidden' }]}
+              style={[CARD_SHADOW, { position: 'absolute', left: summaryFrameLeft, width: summaryFrameWidth, bottom: -40, borderRadius: 24, backgroundColor: '#FFFFFF', padding: 10 }]}
             >
-              <View className="flex-row">
+              <LinearGradient
+                colors={['#F1F1F1', '#FFFFFF']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={{ flexDirection: 'row', borderRadius: 14, borderWidth: 1, borderColor: '#EDE4D8' }}
+              >
                 <SummaryStat value={statPatients} label="Patients" borderRight />
                 <SummaryStat value={statSuccessful} label="Successfully" borderRight />
                 <SummaryStat value={statPending} label="Pending" />
-              </View>
+              </LinearGradient>
             </View>
           </View>
 
+          {/* Tab bar */}
           <View className="flex-row mt-[52px] bg-white/50">
             <InternalTab
               active={activeTab === 'patients'}
@@ -1232,10 +1258,10 @@ export default function WardDetailScreen() {
           {activeTab === 'patients' ? (
             <ScrollView
               className="flex-1"
-              contentContainerStyle={{ paddingTop: 14, paddingBottom: 36 }}
+              contentContainerStyle={{ paddingBottom: 36 }}
               showsVerticalScrollIndicator={false}
             >
-              <View className="bg-white border-t  px-4 py-3 flex-row items-center mb-4">
+              <View className="bg-white border-t  border-[#EAEAEA] px-4 py-3 flex-row items-center mb-4">
                 <View className="flex-1 rounded-[16px] border border-[#E2E0DB] bg-[#FAFAFA] px-3 py-2.5 flex-row items-center mr-3">
                   <Ionicons name="search-outline" size={18} color="#343434" />
                   <TextInput
@@ -1246,7 +1272,6 @@ export default function WardDetailScreen() {
                     onChangeText={setSearchQuery}
                   />
                 </View>
-
                 <TouchableOpacity
                   onPress={handleCycleSort}
                   className="w-11 h-11 rounded-full border border-[#E2E0DB] bg-white items-center justify-center"
