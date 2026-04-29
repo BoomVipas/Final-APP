@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router'
@@ -42,7 +42,7 @@ import {
 
 type TabType = 'patients' | 'dispense'
 
-const SUMMARY_FRAME_WIDTH = 335
+const SUMMARY_FRAME_WIDTH = 370
 type SortMode = 'name' | 'room' | 'urgency'
 type PatientBadge = 'urgent' | 'dispensed' | 'low_medication'
 
@@ -269,6 +269,7 @@ function SummaryStat({ value, label, borderRight }: { value: number; label: stri
   )
 }
 
+
 function InternalTab({
   active,
   icon,
@@ -284,7 +285,7 @@ function InternalTab({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
-      className="flex-1 items-center justify-center pb-2.5 pt-2.5"
+      className="flex-1 items-center justify-center pt-7 pb-3 pt-2.5"
       style={active ? { borderBottomWidth: 2, borderBottomColor: '#EFA54F' } : { borderBottomWidth: 2, borderBottomColor: 'transparent' }}
     >
       <View className="flex-row items-center">
@@ -378,11 +379,12 @@ function TimeChip({
       onPress={onPress}
       activeOpacity={0.85}
       style={{
-        borderRadius: 16,
-        paddingHorizontal: 16,
+        borderRadius: 8,
+        width: 88,
         paddingVertical: 10,
         marginRight: 10,
         overflow: 'hidden',
+        alignItems: 'center',
       }}
     >
       {completed ? (
@@ -390,14 +392,14 @@ function TimeChip({
           colors={['#DDFBF3', '#F4FFFC']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 16, borderWidth: 1, borderColor: '#BDEFE3' }}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 8, borderWidth: 1, borderColor: '#BDEFE3' }}
         />
       ) : (
         <View
           style={{
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
             backgroundColor: active ? '#F6AB52' : '#FFFFFF',
-            borderRadius: 16,
+            borderRadius: 8,
             borderWidth: 1,
             borderColor: active ? '#F6AB52' : '#E4E2DE',
           }}
@@ -705,9 +707,9 @@ function DispenseModal({
 
 export default function WardDetailScreen() {
   const router = useRouter()
-  const { id } = useLocalSearchParams<{ id: string }>()
+  const { id, label } = useLocalSearchParams<{ id: string; label?: string }>()
   const screenWidth = Dimensions.get('window').width
-  const summaryFrameWidth = Math.min(SUMMARY_FRAME_WIDTH, screenWidth - 32)
+  const summaryFrameWidth = Math.min(SUMMARY_FRAME_WIDTH, screenWidth - 16)
   const summaryFrameLeft = (screenWidth - summaryFrameWidth) / 2
   const { user } = useAuthStore()
   const {
@@ -723,6 +725,7 @@ export default function WardDetailScreen() {
     loading: scheduleLoading,
   } = useMedicationStore()
 
+  const [resolvedWardLabel, setResolvedWardLabel] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabType>('patients')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortMode, setSortMode] = useState<SortMode>('urgency')
@@ -741,10 +744,28 @@ export default function WardDetailScreen() {
   const [dispenseJobs, setDispenseJobs]     = useState<DispenseJob[]>([])
   const dispenseEventsRef = useRef<DispenseProgressEvent[]>([])
 
+  const insets = useSafeAreaInsets()
   const routeWardId = typeof id === 'string' ? id : ''
   const effectiveWardId = resolveWardId(routeWardId, user?.ward_id)
-  const wardLabel = formatWardLabel(routeWardId || effectiveWardId)
+  const wardLabel = resolvedWardLabel ?? label ?? formatWardLabel(routeWardId || effectiveWardId)
   const today = new Date().toISOString().slice(0, 10)
+
+  useEffect(() => {
+    async function resolveLabel() {
+      const [{ data: patientRows }, { data: caregiverRows }] = await Promise.all([
+        supabase.from('patients').select('ward_id').not('ward_id', 'is', null),
+        supabase.from('caregivers').select('ward_id').not('ward_id', 'is', null),
+      ])
+      const allIds = [
+        ...(patientRows ?? []).map((r) => r.ward_id as string),
+        ...(caregiverRows ?? []).map((r) => r.ward_id as string),
+      ].filter(Boolean)
+      const sorted = [...new Set(allIds)].sort()
+      const index = sorted.indexOf(effectiveWardId)
+      if (index >= 0) setResolvedWardLabel(`Ward ${String.fromCharCode(65 + index)}`)
+    }
+    if (effectiveWardId) resolveLabel()
+  }, [effectiveWardId])
 
   const fetchDispenseData = useCallback(async () => {
     if (!effectiveWardId || USE_MOCK) return
@@ -1175,23 +1196,25 @@ export default function WardDetailScreen() {
     <View className="flex-1 bg-[#F7F2EA]">
       <Stack.Screen options={{ headerShown: false }} />
 
-      <SafeAreaView className="flex-1 bg-[#F7F2EA]" edges={['top', 'left', 'right']}>
+      <SafeAreaView className="flex-1 bg-[#F7F2EA]" edges={['left', 'right']}>
         <View className="flex-1">
-          <View className="relative h-[220px]">
-            <Image
-              source={HeroSectionImg}
-              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
-              resizeMode="cover"
-            />
+          {/* Background extends to cover header + stats + tabs */}
+          <Image
+            source={HeroSectionImg}
+            style={{ position: 'absolute', top: 0, left: 0, width: screenWidth, height: 390 }}
+            resizeMode="cover"
+          />
+          <View className="relative h-[280px]">
 
             <TouchableOpacity
               onPress={() => router.back()}
-              className="absolute left-5 top-5 w-10 h-10 items-center justify-center"
+              style={{ position: 'absolute', left: 5, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
             >
               <Ionicons name="chevron-back" size={26} color="#313131" />
+              
             </TouchableOpacity>
 
-            <View className="absolute left-6 right-6 bottom-[58px]">
+            <View className="absolute left-6 right-6 bottom-[100px]">
               <Text className="text-[30px] leading-[36px] font-bold text-[#303030]">
                 {wardLabel}
               </Text>
@@ -1204,16 +1227,22 @@ export default function WardDetailScreen() {
             </View>
 
             <View
-              style={[CARD_SHADOW, { position: 'absolute', left: summaryFrameLeft, width: summaryFrameWidth, bottom: -40, borderRadius: 24, backgroundColor: '#FFFFFF', overflow: 'hidden' }]}
+              style={[CARD_SHADOW, { position: 'absolute', left: summaryFrameLeft, width: summaryFrameWidth, bottom: -40, borderRadius: 24, backgroundColor: '#FFFFFF', padding: 10 }]}
             >
-              <View className="flex-row">
+              <LinearGradient
+                colors={['#F1F1F1', '#FFFFFF']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={{ flexDirection: 'row', borderRadius: 14, borderWidth: 1, borderColor: '#EDE4D8' }}
+              >
                 <SummaryStat value={statPatients} label="Patients" borderRight />
                 <SummaryStat value={statSuccessful} label="Successfully" borderRight />
                 <SummaryStat value={statPending} label="Pending" />
-              </View>
+              </LinearGradient>
             </View>
           </View>
 
+          {/* Tab bar */}
           <View className="flex-row mt-[52px] bg-white/50">
             <InternalTab
               active={activeTab === 'patients'}
@@ -1232,10 +1261,10 @@ export default function WardDetailScreen() {
           {activeTab === 'patients' ? (
             <ScrollView
               className="flex-1"
-              contentContainerStyle={{ paddingTop: 14, paddingBottom: 36 }}
+              contentContainerStyle={{ paddingBottom: 36 }}
               showsVerticalScrollIndicator={false}
             >
-              <View className="bg-white border-t  px-4 py-3 flex-row items-center mb-4">
+              <View className="bg-white border-t  border-[#EAEAEA] px-4 py-3 flex-row items-center mb-4">
                 <View className="flex-1 rounded-[16px] border border-[#E2E0DB] bg-[#FAFAFA] px-3 py-2.5 flex-row items-center mr-3">
                   <Ionicons name="search-outline" size={18} color="#343434" />
                   <TextInput
@@ -1246,7 +1275,6 @@ export default function WardDetailScreen() {
                     onChangeText={setSearchQuery}
                   />
                 </View>
-
                 <TouchableOpacity
                   onPress={handleCycleSort}
                   className="w-11 h-11 rounded-full border border-[#E2E0DB] bg-white items-center justify-center"
@@ -1332,14 +1360,14 @@ export default function WardDetailScreen() {
             <View className="flex-1">
               <ScrollView
                 className="flex-1"
-                contentContainerStyle={{ paddingTop: 12, paddingBottom: 36 }}
+                contentContainerStyle={{  paddingBottom: 36 }}
                 showsVerticalScrollIndicator={false}
               >
+                <View style={{ backgroundColor: '#FFFFFF', marginBottom: 16, paddingVertical: 10, shadowColor: '#C8B89A', shadowOpacity: 0.12, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2 }}>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  className="mb-6"
-                  contentContainerStyle={{ paddingHorizontal: 20 }}
+                  contentContainerStyle={{ paddingHorizontal: 12, flexGrow: 1, justifyContent: 'center' }}
                 >
                   {SLOT_META.map((slot) => {
                     const isActive = activeTimeSlot === slot.key
@@ -1358,6 +1386,7 @@ export default function WardDetailScreen() {
                     )
                   })}
                 </ScrollView>
+                </View>
 
                 {activeDispense.pending.length > 0 ? (
                   activeDispense.pending.map((card) => (

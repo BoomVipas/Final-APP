@@ -3,7 +3,7 @@ import { Text, TouchableOpacity, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import { Card } from '../ui/Card'
-import WardpicIcon from '../../../icons/Wardpic.svg'
+import WardHospitalIcon from 'icons/WardHospitalIcon'
 import { type WardSummaryCard } from './types'
 
 // ─── StatBox ──────────────────────────────────────────────────────────────────
@@ -15,10 +15,10 @@ function StatBox({ value, label }: { value: number; label: string }) {
       colors={['#F1F1F1', '#FFFFFF']}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
-      style={{ flex: 1, minHeight: 86, borderRadius: 18, borderWidth: 1, borderColor: '#ECE5DB', paddingHorizontal: 16, paddingVertical: 16, justifyContent: 'center' }}
+      style={{ flex: 1, minHeight: 60, borderRadius: 14, borderWidth: 1, borderColor: '#ECE5DB', paddingHorizontal: 12, paddingVertical: 10, justifyContent: 'center' }}
     >
-      <Text className="text-[21px] leading-[24px] font-semibold text-[#33312F]">{value}</Text>
-      <Text className="text-[10px] leading-[15px] text-[#7D8798] mt-1 text-center" style={{ width: '100%' }} numberOfLines={1}>
+      <Text className="text-[16px] leading-[20px] font-semibold text-[#33312F]">{value}</Text>
+      <Text className="text-[14px] leading-[18px] text-[#7D8798] mt-1" numberOfLines={1}>
         {label}
       </Text>
     </LinearGradient>
@@ -39,7 +39,7 @@ export function WardCard({ ward, onPress }: WardCardProps) {
       <Card className="bg-white shadow-sm px-4 py-4">
         <View className="flex-row items-start">
           <View className="w-16 h-16 rounded-[14px] bg-[#FFF5E8] overflow-hidden mr-4 items-center justify-center">
-            <WardpicIcon width={40} height={40} />
+            <WardHospitalIcon width={64} height={64} />
           </View>
 
           <View className="flex-1 pr-8">
