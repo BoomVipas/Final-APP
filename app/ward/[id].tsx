@@ -36,6 +36,7 @@ import {
   getMachineStatus,
   runDispenseSequence,
   emergencyStop,
+  firmwareRestart,
   type MachineStatus,
   type DispenseProgressEvent,
 } from '../../src/lib/moonraker'
@@ -523,14 +524,24 @@ function DispenseModal({
   onClose: () => void
   onConfirm: () => Promise<void>
 }) {
-  const [phase, setPhase]       = useState<DispenseModalPhase>('confirm')
-  const [events, setEvents]     = useState<DispenseProgressEvent[]>([])
-  const [errorMsg, setErrorMsg] = useState('')
-  const scrollRef               = useRef<ScrollView>(null)
+  const [phase, setPhase]         = useState<DispenseModalPhase>('confirm')
+  const [events, setEvents]       = useState<DispenseProgressEvent[]>([])
+  const [errorMsg, setErrorMsg]   = useState('')
+  const [restarting, setRestarting] = useState(false)
+  const scrollRef                 = useRef<ScrollView>(null)
 
   useEffect(() => {
-    if (visible) { setPhase('confirm'); setEvents([]); setErrorMsg('') }
+    if (visible) { setPhase('confirm'); setEvents([]); setErrorMsg(''); setRestarting(false) }
   }, [visible])
+
+  const handleFirmwareRestart = async () => {
+    setRestarting(true)
+    try {
+      await firmwareRestart()
+    } finally {
+      setRestarting(false)
+    }
+  }
 
   const handleStart = async () => {
     setPhase('running')
@@ -690,9 +701,23 @@ function DispenseModal({
             <View className="items-center py-6">
               <Text className="text-5xl mb-4">❌</Text>
               <Text className="text-xl font-bold text-[#2E241B] mb-2">Dispense Failed</Text>
-              <View className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-6 w-full">
+              <View className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 w-full">
                 <Text className="text-sm text-red-700 text-center">{errorMsg || 'An error occurred. Check the machine and try again.'}</Text>
               </View>
+              <View className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 mb-6 w-full">
+                <Text className="text-xs text-amber-700 text-center">
+                  If the machine shows "Printer is shutdown", fix the cause then tap Restart Machine before retrying.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={handleFirmwareRestart}
+                disabled={restarting}
+                className={`rounded-2xl px-10 py-3.5 mb-3 flex-row items-center justify-center ${restarting ? 'bg-gray-300' : 'bg-[#2A5C9C]'}`}
+              >
+                {restarting
+                  ? <ActivityIndicator color="white" size="small" />
+                  : <Text className="text-white font-bold text-base">↺ Restart Machine</Text>}
+              </TouchableOpacity>
               <TouchableOpacity onPress={onClose} className="bg-[#C96B1A] rounded-2xl px-10 py-3.5">
                 <Text className="text-white font-bold text-base">Close</Text>
               </TouchableOpacity>
@@ -1048,12 +1073,31 @@ export default function WardDetailScreen() {
         `Status: ${status.state}\n${status.message}\n\nPlease check the dispenser before proceeding.`,
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Proceed anyway', onPress: buildAndOpenModal },
+          {
+            text: 'Proceed anyway',
+            onPress: async () => {
+              try {
+                await buildAndOpenModal()
+              } catch (err) {
+                Alert.alert(
+                  'Cabinet not stocked',
+                  err instanceof Error ? err.message : 'Cannot start dispense.',
+                )
+              }
+            },
+          },
         ],
       )
       return
     }
-    buildAndOpenModal()
+    try {
+      await buildAndOpenModal()
+    } catch (err) {
+      Alert.alert(
+        'Cabinet not stocked',
+        err instanceof Error ? err.message : 'Cannot start dispense.',
+      )
+    }
   }
 
   const buildAndOpenModal = async () => {
@@ -1084,12 +1128,18 @@ export default function WardDetailScreen() {
     // Build ordered job list — one job per patient (first medicine found)
     const jobs: DispenseJob[] = pendingForSlot.map((card) => {
       const rx = (prescriptions ?? []).find((p) => p.patient_id === card.id)
-      const cabinet = rx ? (slotByMedicine.get(rx.medicine_id) ?? 1) : 1
+      const mapped = rx ? slotByMedicine.get(rx.medicine_id) : undefined
+      if (!mapped) {
+        throw new Error(
+          `No cabinet slot found for ${rx?.medicine_id ?? 'unknown medicine'}. ` +
+          'Please stock the cabinet first.',
+        )
+      }
       return {
         patientId:   card.id,
         patientName: card.name,
         room:        card.room,
-        cabinet,
+        cabinet:     mapped,
         tablets:     rx?.dose_quantity ?? card.tablets,
       }
     })

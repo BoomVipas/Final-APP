@@ -110,7 +110,7 @@ export async function generateDispenseItems(session_id: string): Promise<number>
   if (slots.length === 0) return 0
 
   const items = slots.flatMap((slot) =>
-    Array.from({ length: FILL_DAYS }, (_, dayOffset) =>
+    Array.from({ length: FILL_DAYS }, (_) =>
       slot.meal_times.map((meal_time) => ({
         session_id,
         patient_id: slot.patient_id,
@@ -119,7 +119,6 @@ export async function generateDispenseItems(session_id: string): Promise<number>
         meal_time,
         quantity: slot.dose_quantity,
         status: 'queued' as const,
-        day_offset: dayOffset,
       })),
     ).flat(),
   )

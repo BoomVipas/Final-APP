@@ -272,6 +272,21 @@ export default function CabinetLoadScreen() {
     }
 
     await generateDispenseItems(session_id)
+
+    // Sync loaded slot positions to cabinet_slots so the ward screen's per-meal
+    // dispense (Flow A) reads current bay assignments after a weekly fill.
+    if (!USE_MOCK) {
+      const cabinetUpserts = medicines.slice(0, MAX_SLOTS).map((med, i) => ({
+        medicine_id: med.medicineId,
+        cabinet_position: i + 1,
+        quantity_remaining: 100,
+        initial_quantity: 100,
+        partition: 'A',
+      }))
+      await supabase.from('cabinet_slots').upsert(cabinetUpserts, { onConflict: 'medicine_id' })
+      // Intentionally not checking error — cabinet_slots sync is best-effort
+    }
+
     return session_id
   }
 

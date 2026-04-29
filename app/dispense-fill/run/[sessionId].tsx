@@ -27,6 +27,7 @@ import { Ionicons } from '@expo/vector-icons'
 import {
   runDispenseSequence,
   emergencyStop,
+  firmwareRestart,
   type DispenseProgressEvent,
 } from '../../../src/lib/moonraker'
 import { updateSessionStatus } from '../../../src/lib/dispenseFill'
@@ -79,6 +80,7 @@ export default function DispenseRunScreen() {
   const [busy, setBusy] = useState(false)
   const [stopped, setStopped] = useState(false)
   const [completed, setCompleted] = useState(false)
+  const [restarting, setRestarting] = useState(false)
 
   const eventsScrollRef = useRef<ScrollView>(null)
   const didInit = useRef(false)
@@ -269,6 +271,15 @@ export default function DispenseRunScreen() {
     )
   }
 
+  const handleFirmwareRestart = async () => {
+    setRestarting(true)
+    try {
+      if (!USE_MOCK && !isMockSession) await firmwareRestart()
+    } finally {
+      setRestarting(false)
+    }
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -412,27 +423,49 @@ export default function DispenseRunScreen() {
             <Ionicons name="hand-left" size={16} color="white" />
             <Text className="text-white font-bold text-sm ml-1.5">Stop</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleReady}
-            disabled={busy || stopped || !active}
-            className={`flex-1 rounded-2xl py-3 items-center justify-center flex-row ${
-              busy || stopped || !active ? 'bg-[#E8D5C4]' : 'bg-[#C96B1A]'
-            }`}
-          >
-            {busy ? (
-              <>
-                <ActivityIndicator color="white" size="small" />
-                <Text className="text-white font-bold text-sm ml-2">Dispensing…</Text>
-              </>
-            ) : (
-              <>
-                <Ionicons name="arrow-forward" size={16} color="white" />
-                <Text className="text-white font-bold text-sm ml-2">
-                  {stopped ? 'Stopped' : !active ? 'All cells done' : 'Ready for next'}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {stopped ? (
+            <TouchableOpacity
+              onPress={handleFirmwareRestart}
+              disabled={restarting}
+              className={`flex-1 rounded-2xl py-3 items-center justify-center flex-row ${
+                restarting ? 'bg-[#E8D5C4]' : 'bg-[#2A5C9C]'
+              }`}
+            >
+              {restarting ? (
+                <>
+                  <ActivityIndicator color="white" size="small" />
+                  <Text className="text-white font-bold text-sm ml-2">Restarting…</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="refresh" size={16} color="white" />
+                  <Text className="text-white font-bold text-sm ml-2">Restart Machine</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={handleReady}
+              disabled={busy || !active}
+              className={`flex-1 rounded-2xl py-3 items-center justify-center flex-row ${
+                busy || !active ? 'bg-[#E8D5C4]' : 'bg-[#C96B1A]'
+              }`}
+            >
+              {busy ? (
+                <>
+                  <ActivityIndicator color="white" size="small" />
+                  <Text className="text-white font-bold text-sm ml-2">Dispensing…</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="arrow-forward" size={16} color="white" />
+                  <Text className="text-white font-bold text-sm ml-2">
+                    {!active ? 'All cells done' : 'Ready for next'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       </SafeAreaView>
     </View>
