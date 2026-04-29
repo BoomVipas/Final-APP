@@ -34,7 +34,7 @@ export function BottomNav({ activeTab, onHome, onWard, onProfile }: BottomNavPro
         borderTopColor: '#ECE5DB',
         paddingHorizontal: 32,
         paddingTop: 12,
-        paddingBottom: Math.max(20, insets.bottom + 12),
+        paddingBottom: 28,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -47,7 +47,7 @@ export function BottomNav({ activeTab, onHome, onWard, onProfile }: BottomNavPro
               style={{ alignItems: 'center', minWidth: 76 }}
               activeOpacity={0.7}
             >
-              <Icon width={28} height={28} color={active ? ACTIVE_COLOR : INACTIVE_COLOR} />
+              <Icon width={24} height={24} color={active ? ACTIVE_COLOR : INACTIVE_COLOR} />
               <Text
                 style={{
                   fontSize: 11,
