@@ -4,26 +4,18 @@
  * Connects to the PILLo dispenser hardware on the local network.
  *
  * Set EXPO_PUBLIC_MOONRAKER_URL in .env.local to override the default.
+ *
+ * Hardware: FYSETC Cheetah V3.0 (STM32F446xx)
+ * - X axis: 0–80mm (gripper lateral, bay_x = 24mm)
+ * - Y axis: rotary carousel –360° to +360° (bay0 = 20°, spacing = 45°)
+ * - Z axis: 0–60mm (60 = top/home, 25 = grip position)
+ * - Bays: 1–8 (1-indexed), Drawers: 0–8 (0-indexed, for LEDs)
  */
 
 const MOONRAKER_URL =
   process.env.EXPO_PUBLIC_MOONRAKER_URL ?? 'http://pillo.local:7125'
 
-// ─── Position map (matches hardware calibration) ────────────────────────────
-const CABINET_POSITIONS: Record<number, { dispenseY: number; fillY: number }> = {
-  1: { dispenseY: 220, fillY: 50  },
-  2: { dispenseY: 310, fillY: 140 },
-  3: { dispenseY: 400, fillY: 230 },
-  4: { dispenseY: 490, fillY: 320 },
-  5: { dispenseY: 580, fillY: 410 },
-  6: { dispenseY: 670, fillY: 500 },
-  7: { dispenseY: 40,  fillY: 590 },
-  8: { dispenseY: 130, fillY: 680 },
-}
-
-const DISPENSE_X  = 40
-const FEEDRATE_XY = 1000
-const FEEDRATE_Z  = 1000
+const TOTAL_BAYS = 8
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
@@ -47,7 +39,7 @@ export interface MachineStatus {
 
 export interface DispenseProgressEvent {
   type: 'homing' | 'moving' | 'picking' | 'delivering' | 'done' | 'error'
-  cabinet?: number
+  bay?: number
   patientName?: string
   step?: number
   total?: number
@@ -79,121 +71,102 @@ export async function homeAllAxes(): Promise<void> {
   await delay(2000)
 }
 
-export async function moveCabinetToFill(cabinet: number): Promise<void> {
-  const pos = CABINET_POSITIONS[cabinet]
-  if (!pos) throw new Error(`Invalid cabinet number: ${cabinet}`)
-  await gcodePost(`G90`)
-  await gcodePost(`G1 Y${pos.fillY} F${FEEDRATE_XY}`)
+// Move a bay to the fill/restock position (for loading medications)
+export async function moveBayToFill(bay: number): Promise<void> {
+  if (bay < 1 || bay > TOTAL_BAYS) throw new Error(`Invalid bay number: ${bay}`)
+  await gcodePost(`MOVE_TO_INSERT_BAY BAY=${bay}`)
 }
 
-// ─── Low-level gripper helpers ───────────────────────────────────────────────
+// ─── LED helpers (drawer is 0-indexed: drawer = bay - 1) ─────────────────────
 
-async function gripperPickAndDeliver(): Promise<void> {
-  await gcodePost(`G90`)
-  await gcodePost(`G1 X${DISPENSE_X} F${FEEDRATE_XY}`)
-  await delay(800)
-  await gcodePost(`G91`)
-  await gcodePost(`G1 Z-15 F${FEEDRATE_Z}`)
-  await gcodePost(`G90`)
-  await delay(500)
-  await gcodePost(`GRIPPER_PICK`)
-  await delay(600)
-  await gcodePost(`G1 Z200 F${FEEDRATE_Z}`)
-  await delay(800)
-  await gcodePost(`G1 X0 F${FEEDRATE_XY}`)
-  await delay(800)
-  await gcodePost(`GRIPPER_RELEASE`)
-  await delay(400)
-}
-
-// ─── LED helpers ─────────────────────────────────────────────────────────────
-
-export async function setSlotLed(slot: number, color: 'green' | 'red' | 'white' | 'blue' | 'off', totalSlots = 8): Promise<void> {
-  const map = { green: [0,1,0], red: [1,0,0], white: [1,1,1], blue: [0,0,1], off: [0,0,0] }
-  const [r,g,b] = map[color]
-  await gcodePost(`SET_LED LED=cabinet_leds RED=${r} GREEN=${g} BLUE=${b} INDEX=${slot} TRANSMIT=1`)
-}
-
-export async function clearAllLeds(totalSlots = 8): Promise<void> {
-  for (let i = 1; i <= totalSlots; i++) {
-    const transmit = i === totalSlots ? 1 : 0
-    await gcodePost(`SET_LED LED=cabinet_leds RED=0 GREEN=0 BLUE=0 INDEX=${i} TRANSMIT=${transmit}`)
+export async function setBayLed(bay: number, color: 'green' | 'red' | 'white' | 'blue' | 'off'): Promise<void> {
+  const drawer = bay - 1
+  if (color === 'off') {
+    await gcodePost(`DRAWER_LED_OFF DRAWER=${drawer}`)
+    return
   }
+  const map = { green: [0, 1, 0], red: [1, 0, 0], white: [1, 1, 1], blue: [0, 0, 1] }
+  const [r, g, b] = map[color]
+  await gcodePost(`DRAWER_LED_ON DRAWER=${drawer} R=${r} G=${g} B=${b}`)
+}
+
+export async function clearAllLeds(): Promise<void> {
+  await gcodePost('DRAWER_LED_ALL_OFF')
 }
 
 // ─── Main dispense sequence ───────────────────────────────────────────────────
-// Called with an ordered list of cabinet positions to dispense from.
-// onProgress fires at every meaningful step so the UI can update in real time.
+// Homes the machine, then for each bay: positions gripper (MOVE_TO_BAY),
+// picks the pill (PICK), moves to delivery tray (X=0), and releases (RELEASE).
 
 export async function runDispenseSequence(
-  cabinets: { cabinet: number; patientName: string }[],
+  bays: { bay: number; patientName: string }[],
   onProgress: (event: DispenseProgressEvent) => void,
-  startY?: number,
-): Promise<number> {
-  if (cabinets.length === 0) return startY ?? 0
+): Promise<void> {
+  if (bays.length === 0) return
 
-  let currentY: number
-  if (startY === undefined) {
-    onProgress({ type: 'homing', message: 'Homing all axes...' })
-    await gcodePost('G28')
-    await delay(2000)
-    currentY = 0
-  } else {
-    currentY = startY
-  }
+  onProgress({ type: 'homing', message: 'Homing all axes...' })
+  await gcodePost('G28')
+  await delay(2000)
 
-  for (let i = 0; i < cabinets.length; i++) {
-    const { cabinet, patientName } = cabinets[i]
-    const pos = CABINET_POSITIONS[cabinet]
-    if (!pos) throw new Error(`Invalid cabinet position: ${cabinet}`)
+  for (let i = 0; i < bays.length; i++) {
+    const { bay, patientName } = bays[i]
+    if (bay < 1 || bay > TOTAL_BAYS) throw new Error(`Invalid bay number: ${bay}`)
 
-    // Highlight the slot LED white before moving to it
-    await setSlotLed(cabinet, 'white')
+    // Light bay white to indicate it is about to be accessed
+    await setBayLed(bay, 'white')
 
     onProgress({
       type: 'moving',
-      cabinet,
+      bay,
       patientName,
       step: i + 1,
-      total: cabinets.length,
-      message: `Moving to cabinet ${cabinet} for ${patientName}...`,
+      total: bays.length,
+      message: `Moving to bay ${bay} for ${patientName}...`,
     })
 
-    const deltaY = pos.dispenseY - currentY
-    await gcodePost(`G91`)
-    await gcodePost(`G1 Y${deltaY} F${FEEDRATE_XY}`)
-    await gcodePost(`G90`)
-    await delay(1000)
+    // MOVE_TO_BAY: raises Z to top, moves X to 24mm, rotates Y to bay angle
+    await gcodePost(`MOVE_TO_BAY BAY=${bay}`)
+    await delay(500)
 
     onProgress({
       type: 'picking',
-      cabinet,
+      bay,
       patientName,
       step: i + 1,
-      total: cabinets.length,
+      total: bays.length,
       message: `Dispensing for ${patientName}...`,
     })
 
-    await gripperPickAndDeliver()
+    // PICK: lowers Z to 25mm → waits → activates vacuum → waits → raises Z to 60mm
+    await gcodePost('PICK')
+    await delay(200)
 
-    // Turn slot LED green after successful dispense
-    await setSlotLed(cabinet, 'green')
+    // Move to delivery tray at X=0
+    await gcodePost('MOVE_X POS=0')
+    await delay(400)
 
-    currentY = pos.dispenseY
+    // Drop pill — Z is already at top after PICK so GRIPPER_OFF is sufficient
+    await gcodePost('GRIPPER_OFF')
+    await delay(300)
+
+    // Turn bay LED green after successful dispense
+    await setBayLed(bay, 'green')
+
     onProgress({
       type: 'delivering',
-      cabinet,
+      bay,
       patientName,
       step: i + 1,
-      total: cabinets.length,
+      total: bays.length,
       message: `✓ ${patientName} dispensed`,
     })
   }
 
   await clearAllLeds()
   onProgress({ type: 'done', message: 'All medications dispensed successfully' })
-  return currentY
 }
+
+// ─── Emergency stop ───────────────────────────────────────────────────────────
 
 export async function emergencyStop(): Promise<void> {
   await fetch(`${MOONRAKER_URL}/printer/emergency_stop`, { method: 'POST' })

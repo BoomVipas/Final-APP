@@ -27,7 +27,7 @@ import { supabase } from '../../../src/lib/supabase'
 import {
   getMachineStatus,
   homeAllAxes,
-  moveCabinetToFill,
+  moveBayToFill,
 } from '../../../src/lib/moonraker'
 import {
   createDispenseSession,
@@ -168,7 +168,7 @@ export default function CabinetLoadScreen() {
         setMachineMessage('Homing all axes…')
         await homeAllAxes()
         setMachineMessage('Moving tray to slot 1…')
-        await moveCabinetToFill(1)
+        await moveBayToFill(1)
         setMachineState('ready')
         setMachineMessage('Tray at slot 1 — load the first medicine')
       } catch (err) {
@@ -219,7 +219,7 @@ export default function CabinetLoadScreen() {
     try {
       setMachineState('moving')
       setMachineMessage(`Moving tray to slot ${nextSlotPosition}…`)
-      await moveCabinetToFill(nextSlotPosition)
+      await moveBayToFill(nextSlotPosition)
       setCurrentIndex(nextIndex)
       setMachineState('ready')
       setMachineMessage(`Tray at slot ${nextSlotPosition} — load the next medicine`)

@@ -1115,7 +1115,7 @@ export default function WardDetailScreen() {
     if (sessionError) throw sessionError
 
     await runDispenseSequence(
-      dispenseJobs.map((j) => ({ cabinet: j.cabinet, patientName: j.patientName })),
+      dispenseJobs.map((j) => ({ bay: j.cabinet, patientName: j.patientName })),
       (event) => {
         dispenseEventsRef.current = [...dispenseEventsRef.current, event]
         // Trigger re-render by updating a state value via the event stream

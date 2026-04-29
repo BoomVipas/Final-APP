@@ -79,7 +79,7 @@ export default function DispenseRunScreen() {
   const [busy, setBusy] = useState(false)
   const [stopped, setStopped] = useState(false)
   const [completed, setCompleted] = useState(false)
-  const lastYRef = useRef<number | undefined>(undefined)
+
   const eventsScrollRef = useRef<ScrollView>(null)
   const didInit = useRef(false)
   const dispatchedKeyRef = useRef<string | null>(null)
@@ -131,7 +131,7 @@ export default function DispenseRunScreen() {
     if (didInit.current) return
     if (loading || slots.length === 0 || activeMeals.length === 0) return
     didInit.current = true
-    runForCell(0, 0, true)
+    runForCell(0, 0)
   }, [loading, slots, activeMeals])
 
   const slotIndicesForMeal = (mealKey: MealTime): number[] => {
@@ -149,7 +149,7 @@ export default function DispenseRunScreen() {
     })
   }
 
-  const runForCell = async (day: number, mealIdx: number, isFirst: boolean) => {
+  const runForCell = async (day: number, mealIdx: number) => {
     const key = cellKey(day, mealIdx)
     if (dispatchedKeyRef.current === key) return // guard double-fire
     dispatchedKeyRef.current = key
@@ -166,7 +166,7 @@ export default function DispenseRunScreen() {
     const cabinets = indices.map((idx) => {
       const slot = slots.find((s) => s.slot_index === idx)
       return {
-        cabinet: idx,
+        bay: idx,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         patientName: ((slot as any)?.medicineName as string | undefined) ?? `Slot ${idx}`,
       }
@@ -175,21 +175,19 @@ export default function DispenseRunScreen() {
     setBusy(true)
     try {
       if (USE_MOCK || isMockSession) {
-        onProgress({ type: 'homing', message: isFirst ? 'Mock: homing all axes…' : 'Mock: continuing from last position' })
+        onProgress({ type: 'homing', message: 'Mock: homing all axes…' })
         for (let i = 0; i < cabinets.length; i++) {
           const c = cabinets[i]
           await new Promise((r) => setTimeout(r, 400))
-          onProgress({ type: 'moving', cabinet: c.cabinet, step: i + 1, total: cabinets.length, message: `Mock: moving to slot ${c.cabinet}` })
+          onProgress({ type: 'moving', bay: c.bay, step: i + 1, total: cabinets.length, message: `Mock: moving to bay ${c.bay}` })
           await new Promise((r) => setTimeout(r, 300))
-          onProgress({ type: 'picking', cabinet: c.cabinet, step: i + 1, total: cabinets.length, message: `Mock: picking from slot ${c.cabinet}` })
+          onProgress({ type: 'picking', bay: c.bay, step: i + 1, total: cabinets.length, message: `Mock: picking from bay ${c.bay}` })
           await new Promise((r) => setTimeout(r, 300))
-          onProgress({ type: 'delivering', cabinet: c.cabinet, step: i + 1, total: cabinets.length, message: `✓ Mock dispensed slot ${c.cabinet}` })
+          onProgress({ type: 'delivering', bay: c.bay, step: i + 1, total: cabinets.length, message: `✓ Mock dispensed bay ${c.bay}` })
         }
         onProgress({ type: 'done', message: 'Mock: cell complete — caregiver may continue' })
-        lastYRef.current = (lastYRef.current ?? 0) + 100
       } else {
-        const finalY = await runDispenseSequence(cabinets, onProgress, isFirst ? undefined : lastYRef.current)
-        lastYRef.current = finalY
+        await runDispenseSequence(cabinets, onProgress)
       }
     } catch (err) {
       onProgress({ type: 'error', message: err instanceof Error ? err.message : 'Dispense failed' })
@@ -212,7 +210,7 @@ export default function DispenseRunScreen() {
     }
     setCellStatuses((prev) => ({ ...prev, [cellKey(nextD, nextM)]: 'dispensing' }))
     setViewDayIndex(nextD)
-    runForCell(nextD, nextM, false)
+    runForCell(nextD, nextM)
   }
 
   const handleReady = () => {
