@@ -1,12 +1,12 @@
 import React from 'react'
-import { ImageBackground, Text, View } from 'react-native'
-import FrameIcon from '../../../icons/Frame.png'
+import { Text, View } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 
 function StatBlock({ value, label }: { value: number; label: string }) {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ fontSize: 24, lineHeight: 30, fontWeight: '700', color: '#2F2E2D' }}>{value}</Text>
-      <Text style={{ marginTop: 8, fontSize: 12, lineHeight: 16, color: '#7E8797' }}>{label}</Text>
+      <Text style={{ fontSize: 28, lineHeight: 34, fontWeight: '700', color: '#2F2E2D' }}>{value}</Text>
+      <Text style={{ marginTop: 6, fontSize: 12, lineHeight: 16, color: '#7E8797' }}>{label}</Text>
     </View>
   )
 }
@@ -19,30 +19,37 @@ interface PatientStatBarProps {
 
 export function PatientStatBar({ statType, statDosePerDay, statEndDate }: PatientStatBarProps) {
   return (
-    <ImageBackground
-      source={FrameIcon}
+    <View
       style={{
-        marginTop: -74,
-        marginHorizontal: 50,
-        height: 116,
-        borderRadius: 28,
+        marginHorizontal: 20,
+        borderRadius: 20,
         backgroundColor: '#FFFFFF',
-        overflow: 'hidden',
-        shadowColor: '#D7CCBB',
+        padding: 8,
+        shadowColor: '#C8B89A',
         shadowOpacity: 0.22,
-        shadowOffset: { width: 0, height: 8 },
+        shadowOffset: { width: 0, height: 6 },
         shadowRadius: 16,
-        elevation: 4,
+        elevation: 5,
       }}
-      imageStyle={{ borderRadius: 28, resizeMode: 'stretch' }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'stretch', flex: 1 }}>
+      <LinearGradient
+        colors={['#F1F1F1', '#FFFFFF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={{
+          flexDirection: 'row',
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: '#EDE4D8',
+          height: 80,
+        }}
+      >
         <StatBlock value={statType}       label="Type" />
-        <View style={{ width: 1, backgroundColor: '#ECE9E3', marginVertical: 18 }} />
+        <View style={{ width: 1, backgroundColor: '#ECE9E3', marginVertical: 12 }} />
         <StatBlock value={statDosePerDay} label="Dose/Day" />
-        <View style={{ width: 1, backgroundColor: '#ECE9E3', marginVertical: 18 }} />
+        <View style={{ width: 1, backgroundColor: '#ECE9E3', marginVertical: 12 }} />
         <StatBlock value={statEndDate}    label="End Date" />
-      </View>
-    </ImageBackground>
+      </LinearGradient>
+    </View>
   )
 }

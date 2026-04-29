@@ -1,6 +1,6 @@
 import React from 'react'
 import { Text, TouchableOpacity, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import HealthIcon from '../../../icons/Health.svg'
@@ -16,13 +16,14 @@ interface PatientHeaderProps {
 }
 
 export function PatientHeader({ patientName, roomNumber, age, heroMedicationCount, onBack, onActions }: PatientHeaderProps) {
+  const insets = useSafeAreaInsets()
   return (
     <LinearGradient
       colors={['#F9E1BE', '#F5BC77', '#ECA44E']}
       locations={[0, 0.55, 1]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={{ paddingBottom: 72, overflow: 'hidden' }}
+      style={{ paddingBottom: 48, overflow: 'hidden' }}
     >
       <SafeAreaView edges={['top']}>
         {/* Decorative background circles */}
@@ -30,13 +31,17 @@ export function PatientHeader({ patientName, roomNumber, age, heroMedicationCoun
         <View style={{ position: 'absolute', top: 8, right: -20, width: 176, height: 176, borderRadius: 88, backgroundColor: '#FFD9A8', opacity: 0.34 }} accessible={false} />
         <View style={{ position: 'absolute', right: 34, top: 22, width: 114, height: 114, borderRadius: 57, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.28)' }} accessible={false} />
 
-        <View style={{ paddingHorizontal: 18, paddingTop: 6 }}>
-          {/* Title bar: ← back · "Patients Detail" · ⋯ actions */}
-          <View style={{ position: 'relative', minHeight: 44, justifyContent: 'center' }}>
-            <TouchableOpacity onPress={onBack} style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="chevron-back" size={28} color="#2F2E2D" />
-            </TouchableOpacity>
+        {/* Back button — absolutely positioned to match ward page */}
+        <TouchableOpacity
+          onPress={onBack}
+          style={{ position: 'absolute', left: 5, top: insets.top + 8, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Ionicons name="chevron-back" size={26} color="#313131" />
+        </TouchableOpacity>
 
+        <View style={{ paddingHorizontal: 18, paddingTop: 6 }}>
+          {/* Title bar: "Patients Detail" · ⋯ actions */}
+          <View style={{ position: 'relative', minHeight: 44, justifyContent: 'center' }}>
             <Text style={{ position: 'absolute', alignSelf: 'center', fontSize: 18, lineHeight: 24, fontWeight: '500', color: '#2F2E2D' }}>
               Patients Detail
             </Text>
@@ -52,8 +57,8 @@ export function PatientHeader({ patientName, roomNumber, age, heroMedicationCoun
           </View>
 
           {/* Patient info: name / room / tablets + avatar */}
-          <View style={{ marginTop: 22, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-            <View style={{ flex: 1, paddingRight: 14 }}>
+          <View style={{ marginTop: 12,marginBottom: 18, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <View style={{ flex: 1, paddingRight: 14, marginTop: -2 }}>
               <Text style={{ fontSize: 18, lineHeight: 24, fontWeight: '700', color: '#2F2E2D' }} numberOfLines={2}>
                 {patientName}
               </Text>
@@ -71,7 +76,7 @@ export function PatientHeader({ patientName, roomNumber, age, heroMedicationCoun
               </View>
             </View>
 
-            <Profile2Icon />
+            <Profile2Icon width={72} height={72} />
           </View>
         </View>
       </SafeAreaView>

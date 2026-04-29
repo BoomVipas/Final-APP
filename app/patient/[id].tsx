@@ -196,7 +196,7 @@ function ScreenEmptyState({ icon, title, body }: { icon: keyof typeof Ionicons.g
 
 function DetailTabBar({ tabs, activeTab, onTabChange }: { tabs: TabDef[]; activeTab: DetailTab; onTabChange: (tab: DetailTab) => void }) {
   return (
-    <View style={{ paddingHorizontal: 8, marginTop: 20 }}>
+    <View style={{ paddingHorizontal: 8, marginTop: 0 }}>
       <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key
@@ -505,9 +505,26 @@ export default function PatientDetailScreen() {
         }}
       />
 
-      <PatientStatBar statType={statType} statDosePerDay={statDosePerDay} statEndDate={statEndDate} />
+      {/* Stat bar straddles the orange/white boundary — center sits at the seam */}
+      <View style={{ marginTop: -48, zIndex: 2, position: 'relative' }}>
+        <PatientStatBar statType={statType} statDosePerDay={statDosePerDay} statEndDate={statEndDate} />
+      </View>
 
-      <DetailTabBar tabs={detailTabs} activeTab={activeTab} onTabChange={setActiveTab} />
+      {/* White section slides up behind the bottom half of the stat bar */}
+      <View style={{
+        marginTop: -48,
+        zIndex: 1,
+        position: 'relative',
+        backgroundColor: '#FFFFFF',
+        shadowColor: '#C8B89A',
+        shadowOpacity: 0.15,
+        shadowOffset: { width: 0, height: 4 },
+        shadowRadius: 12,
+        elevation: 4,
+        paddingTop: 52,
+      }}>
+        <DetailTabBar tabs={detailTabs} activeTab={activeTab} onTabChange={setActiveTab} />
+      </View>
 
       <ScrollView
         style={{ flex: 1, marginTop: 8 }}
