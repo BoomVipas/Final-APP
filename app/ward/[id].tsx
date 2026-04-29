@@ -34,7 +34,7 @@ import MedicineIcon from '../../icons/Medicine.svg'
 import TickIcon from '../../icons/Tick.svg'
 import {
   getMachineStatus,
-  runDispenseSequence,
+  dispenseSequence,
   emergencyStop,
   firmwareRestart,
   type MachineStatus,
@@ -522,7 +522,7 @@ function DispenseModal({
   jobs: DispenseJob[]
   timeLabel: string
   onClose: () => void
-  onConfirm: () => Promise<void>
+  onConfirm: (onProgress: (event: DispenseProgressEvent) => void) => Promise<void>
 }) {
   const [phase, setPhase]         = useState<DispenseModalPhase>('confirm')
   const [events, setEvents]       = useState<DispenseProgressEvent[]>([])
@@ -547,7 +547,12 @@ function DispenseModal({
     setPhase('running')
     setEvents([])
     try {
-      await onConfirm()
+      await onConfirm((event) => {
+        setEvents((prev) => {
+          requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))
+          return [...prev, event]
+        })
+      })
       setPhase('done')
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Dispense failed')
@@ -767,7 +772,6 @@ export default function WardDetailScreen() {
   const [checkingMachine, setCheckingMachine] = useState(false)
   const [showDispenseModal, setShowDispenseModal] = useState(false)
   const [dispenseJobs, setDispenseJobs]     = useState<DispenseJob[]>([])
-  const dispenseEventsRef = useRef<DispenseProgressEvent[]>([])
 
   const insets = useSafeAreaInsets()
   const routeWardId = typeof id === 'string' ? id : ''
@@ -1105,7 +1109,7 @@ export default function WardDetailScreen() {
     const selectedIds = [...selectedPatients]
     const pendingForSlot = activeDispense.pending.filter((c) => selectedIds.includes(c.id))
 
-    // Fetch patient prescriptions + cabinet slots for selected patients
+    // Fetch patient prescriptions for selected patients
     const { data: prescriptions } = await supabase
       .from('patient_prescriptions')
       .select('patient_id, medicine_id, dose_quantity')
@@ -1115,14 +1119,26 @@ export default function WardDetailScreen() {
 
     const medicineIds = [...new Set((prescriptions ?? []).map((p) => p.medicine_id))]
 
-    const { data: slots } = await supabase
-      .from('cabinet_slots')
-      .select('medicine_id, cabinet_position')
-      .in('medicine_id', medicineIds)
+    // Look up slot_index (turntable bay, 1-based) from today's dispenser_slots.
+    // cabinet_position is the LED drawer index (0-based) — not the bay number.
+    const { data: todaySessions } = await supabase
+      .from('dispense_sessions')
+      .select('id, patient_id')
+      .in('patient_id', selectedIds)
+      .like('session_date', `${today}%`)
+
+    const sessionIds = (todaySessions ?? []).map((s) => s.id)
 
     const slotByMedicine = new Map<string, number>()
-    for (const s of slots ?? []) {
-      if (s.medicine_id) slotByMedicine.set(s.medicine_id, s.cabinet_position)
+    if (sessionIds.length > 0) {
+      const { data: dispenserSlots } = await supabase
+        .from('dispenser_slots')
+        .select('medicine_id, slot_index')
+        .in('session_id', sessionIds)
+        .in('medicine_id', medicineIds)
+      for (const s of dispenserSlots ?? []) {
+        if (s.medicine_id) slotByMedicine.set(s.medicine_id, s.slot_index)
+      }
     }
 
     // Build ordered job list — one job per patient (first medicine found)
@@ -1131,8 +1147,8 @@ export default function WardDetailScreen() {
       const mapped = rx ? slotByMedicine.get(rx.medicine_id) : undefined
       if (!mapped) {
         throw new Error(
-          `No cabinet slot found for ${rx?.medicine_id ?? 'unknown medicine'}. ` +
-          'Please stock the cabinet first.',
+          `No turntable slot found for ${rx?.medicine_id ?? 'unknown medicine'}. ` +
+          'Complete the weekly fill for this patient before dispensing.',
         )
       }
       return {
@@ -1145,11 +1161,10 @@ export default function WardDetailScreen() {
     })
 
     setDispenseJobs(jobs)
-    dispenseEventsRef.current = []
     setShowDispenseModal(true)
   }
 
-  const runDispense = async () => {
+  const runDispense = async (onProgress: (event: DispenseProgressEvent) => void) => {
     const { data: session, error: sessionError } = await supabase
       .from('dispense_sessions')
       .insert({
@@ -1164,12 +1179,14 @@ export default function WardDetailScreen() {
 
     if (sessionError) throw sessionError
 
-    await runDispenseSequence(
-      dispenseJobs.map((j) => ({ bay: j.cabinet, patientName: j.patientName })),
-      (event) => {
-        dispenseEventsRef.current = [...dispenseEventsRef.current, event]
-        // Trigger re-render by updating a state value via the event stream
-        setDispenseJobs((prev) => [...prev])
+    await dispenseSequence(
+      dispenseJobs.map((j) => j.cabinet),
+      (msg) => {
+        const type: DispenseProgressEvent['type'] =
+          msg.startsWith('Homing') ? 'homing'
+          : msg.includes('dispensed') ? 'delivering'
+          : 'moving'
+        onProgress({ type, message: msg })
       },
     )
 

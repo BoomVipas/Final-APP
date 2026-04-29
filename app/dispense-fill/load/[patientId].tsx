@@ -28,6 +28,8 @@ import {
   getMachineStatus,
   homeAllAxes,
   moveBayToFill,
+  // highlightFillSlot, // LED disabled
+  // clearAllLeds,      // LED disabled
 } from '../../../src/lib/moonraker'
 import {
   createDispenseSession,
@@ -169,6 +171,7 @@ export default function CabinetLoadScreen() {
         await homeAllAxes()
         setMachineMessage('Moving tray to slot 1…')
         await moveBayToFill(1)
+        // await highlightFillSlot(1) // LED disabled
         setMachineState('ready')
         setMachineMessage('Tray at slot 1 — load the first medicine')
       } catch (err) {
@@ -197,6 +200,7 @@ export default function CabinetLoadScreen() {
     if (nextIndex >= medicines.length) {
       setCurrentIndex(nextIndex)
       setMachineMessage('All medicines loaded — ready to start')
+      // if (!USE_MOCK) clearAllLeds().catch(() => {}) // LED disabled
       return
     }
 
@@ -220,6 +224,7 @@ export default function CabinetLoadScreen() {
       setMachineState('moving')
       setMachineMessage(`Moving tray to slot ${nextSlotPosition}…`)
       await moveBayToFill(nextSlotPosition)
+      // await highlightFillSlot(nextSlotPosition) // LED disabled
       setCurrentIndex(nextIndex)
       setMachineState('ready')
       setMachineMessage(`Tray at slot ${nextSlotPosition} — load the next medicine`)

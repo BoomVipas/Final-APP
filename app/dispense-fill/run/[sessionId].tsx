@@ -25,7 +25,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import {
-  runDispenseSequence,
+  dispenseSequence,
   emergencyStop,
   firmwareRestart,
   type DispenseProgressEvent,
@@ -124,6 +124,9 @@ export default function DispenseRunScreen() {
   const eventsScrollRef = useRef<ScrollView>(null);
   const didInit = useRef(false);
   const dispatchedKeyRef = useRef<string | null>(null);
+  // Tracks the last carousel Y angle so subsequent meals skip G28 (startY optimisation).
+  // Undefined = machine position unknown → home required.
+  const lastYRef = useRef<number | undefined>(undefined);
 
   // ── Load session slots ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -210,53 +213,35 @@ export default function DispenseRunScreen() {
       return;
     }
 
-    const cabinets = indices.map((idx) => {
-      const slot = slots.find((s) => s.slot_index === idx);
-      return {
-        bay: idx,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        patientName:
-          ((slot as any)?.medicineName as string | undefined) ?? `Slot ${idx}`,
-      };
-    });
-
     setBusy(true);
     try {
       if (USE_MOCK || isMockSession) {
         onProgress({ type: "homing", message: "Mock: homing all axes…" });
-        for (let i = 0; i < cabinets.length; i++) {
-          const c = cabinets[i];
+        for (let i = 0; i < indices.length; i++) {
+          const bay = indices[i];
           await new Promise((r) => setTimeout(r, 400));
-          onProgress({
-            type: "moving",
-            bay: c.bay,
-            step: i + 1,
-            total: cabinets.length,
-            message: `Mock: moving to bay ${c.bay}`,
-          });
+          onProgress({ type: "moving",    bay, step: i + 1, total: indices.length, message: `Mock: moving to bay ${bay}` });
           await new Promise((r) => setTimeout(r, 300));
-          onProgress({
-            type: "picking",
-            bay: c.bay,
-            step: i + 1,
-            total: cabinets.length,
-            message: `Mock: picking from bay ${c.bay}`,
-          });
+          onProgress({ type: "picking",   bay, step: i + 1, total: indices.length, message: `Mock: picking from bay ${bay}` });
           await new Promise((r) => setTimeout(r, 300));
-          onProgress({
-            type: "delivering",
-            bay: c.bay,
-            step: i + 1,
-            total: cabinets.length,
-            message: `✓ Mock dispensed bay ${c.bay}`,
-          });
+          onProgress({ type: "delivering",bay, step: i + 1, total: indices.length, message: `✓ Mock dispensed bay ${bay}` });
         }
-        onProgress({
-          type: "done",
-          message: "Mock: cell complete — caregiver may continue",
-        });
+        onProgress({ type: "done", message: "Mock: cell complete — caregiver may continue" });
       } else {
-        await runDispenseSequence(cabinets, onProgress);
+        // Home on the first meal only (startY=undefined); subsequent meals skip G28.
+        const returnedY = await dispenseSequence(
+          indices,
+          (msg) => {
+            const type: DispenseProgressEvent["type"] =
+              msg.startsWith("Homing") ? "homing"
+              : msg.includes("dispensed") ? "delivering"
+              : "moving";
+            onProgress({ type, message: msg });
+          },
+          lastYRef.current,
+        );
+        lastYRef.current = returnedY;
+        onProgress({ type: "done", message: "Meal complete — ready for next" });
       }
     } catch (err) {
       onProgress({
@@ -434,7 +419,6 @@ export default function DispenseRunScreen() {
           </View>
         </View>
 
-        {/* Day tabs */}
         {/* Day tabs */}
         <View className="flex-row mb-3 px-4 gap-1">
           {DAYS.map((label, i) => {
