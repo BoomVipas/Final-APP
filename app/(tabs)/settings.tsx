@@ -16,6 +16,7 @@ import { Tabs, useRouter } from "expo-router";
 import { BottomNav } from "../../src/components/shared/BottomNav";
 import { useIsFocused } from "@react-navigation/native";
 
+import BackgroundprofileSvg from "../../icons/Backgroundprofile.svg";
 import { useAuthStore } from "../../src/stores/authStore";
 import { useHandoverStore } from "../../src/stores/handoverStore";
 import { supabase } from "../../src/lib/supabase";
@@ -200,12 +201,12 @@ export default function SettingsScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          <LinearGradient
-            colors={["#FFF8EF", "#F5D4AD", "#EFA65B"]}
-            start={{ x: 0.08, y: 0.02 }}
-            end={{ x: 0.95, y: 1 }}
-            style={styles.hero}
-          >
+          <View style={styles.hero}>
+            <BackgroundprofileSvg
+              width={Dimensions.get("window").width}
+              height={Math.round(Dimensions.get("window").width / SETTINGS_HEADER_ASPECT_RATIO)}
+              style={{ position: "absolute", top: 0, left: 0 }}
+            />
             <View style={styles.heroRow}>
               <View style={styles.avatarOuter}>
                 <LinearGradient
@@ -241,7 +242,7 @@ export default function SettingsScreen() {
                 </Pressable>
               </View>
             </View>
-          </LinearGradient>
+          </View>
 
           <SectionTitle>Main Menu</SectionTitle>
           <View style={[styles.menuCard, CARD_SHADOW]}>
