@@ -27,7 +27,9 @@ import { supabase } from '../../../src/lib/supabase'
 import {
   getMachineStatus,
   homeAllAxes,
-  moveCabinetToFill,
+  moveBayToFill,
+  highlightFillSlot,
+  clearAllLeds,
 } from '../../../src/lib/moonraker'
 import {
   createDispenseSession,
@@ -168,7 +170,8 @@ export default function CabinetLoadScreen() {
         setMachineMessage('Homing all axes…')
         await homeAllAxes()
         setMachineMessage('Moving tray to slot 1…')
-        await moveCabinetToFill(1)
+        await moveBayToFill(1)
+        await highlightFillSlot(1)
         setMachineState('ready')
         setMachineMessage('Tray at slot 1 — load the first medicine')
       } catch (err) {
@@ -197,6 +200,7 @@ export default function CabinetLoadScreen() {
     if (nextIndex >= medicines.length) {
       setCurrentIndex(nextIndex)
       setMachineMessage('All medicines loaded — ready to start')
+      if (!USE_MOCK) clearAllLeds().catch(() => {})
       return
     }
 
@@ -219,7 +223,8 @@ export default function CabinetLoadScreen() {
     try {
       setMachineState('moving')
       setMachineMessage(`Moving tray to slot ${nextSlotPosition}…`)
-      await moveCabinetToFill(nextSlotPosition)
+      await moveBayToFill(nextSlotPosition)
+      await highlightFillSlot(nextSlotPosition)
       setCurrentIndex(nextIndex)
       setMachineState('ready')
       setMachineMessage(`Tray at slot ${nextSlotPosition} — load the next medicine`)
@@ -272,6 +277,21 @@ export default function CabinetLoadScreen() {
     }
 
     await generateDispenseItems(session_id)
+
+    // Sync loaded slot positions to cabinet_slots so the ward screen's per-meal
+    // dispense (Flow A) reads current bay assignments after a weekly fill.
+    if (!USE_MOCK) {
+      const cabinetUpserts = medicines.slice(0, MAX_SLOTS).map((med, i) => ({
+        medicine_id: med.medicineId,
+        cabinet_position: i + 1,
+        quantity_remaining: 100,
+        initial_quantity: 100,
+        partition: 'A',
+      }))
+      await supabase.from('cabinet_slots').upsert(cabinetUpserts, { onConflict: 'medicine_id' })
+      // Intentionally not checking error — cabinet_slots sync is best-effort
+    }
+
     return session_id
   }
 

@@ -34,8 +34,9 @@ import MedicineIcon from '../../icons/Medicine.svg'
 import TickIcon from '../../icons/Tick.svg'
 import {
   getMachineStatus,
-  runDispenseSequence,
+  dispenseSequence,
   emergencyStop,
+  firmwareRestart,
   type MachineStatus,
   type DispenseProgressEvent,
 } from '../../src/lib/moonraker'
@@ -521,22 +522,37 @@ function DispenseModal({
   jobs: DispenseJob[]
   timeLabel: string
   onClose: () => void
-  onConfirm: () => Promise<void>
+  onConfirm: (onProgress: (event: DispenseProgressEvent) => void) => Promise<void>
 }) {
-  const [phase, setPhase]       = useState<DispenseModalPhase>('confirm')
-  const [events, setEvents]     = useState<DispenseProgressEvent[]>([])
-  const [errorMsg, setErrorMsg] = useState('')
-  const scrollRef               = useRef<ScrollView>(null)
+  const [phase, setPhase]         = useState<DispenseModalPhase>('confirm')
+  const [events, setEvents]       = useState<DispenseProgressEvent[]>([])
+  const [errorMsg, setErrorMsg]   = useState('')
+  const [restarting, setRestarting] = useState(false)
+  const scrollRef                 = useRef<ScrollView>(null)
 
   useEffect(() => {
-    if (visible) { setPhase('confirm'); setEvents([]); setErrorMsg('') }
+    if (visible) { setPhase('confirm'); setEvents([]); setErrorMsg(''); setRestarting(false) }
   }, [visible])
+
+  const handleFirmwareRestart = async () => {
+    setRestarting(true)
+    try {
+      await firmwareRestart()
+    } finally {
+      setRestarting(false)
+    }
+  }
 
   const handleStart = async () => {
     setPhase('running')
     setEvents([])
     try {
-      await onConfirm()
+      await onConfirm((event) => {
+        setEvents((prev) => {
+          requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))
+          return [...prev, event]
+        })
+      })
       setPhase('done')
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Dispense failed')
@@ -690,9 +706,23 @@ function DispenseModal({
             <View className="items-center py-6">
               <Text className="text-5xl mb-4">❌</Text>
               <Text className="text-xl font-bold text-[#2E241B] mb-2">Dispense Failed</Text>
-              <View className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-6 w-full">
+              <View className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 w-full">
                 <Text className="text-sm text-red-700 text-center">{errorMsg || 'An error occurred. Check the machine and try again.'}</Text>
               </View>
+              <View className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 mb-6 w-full">
+                <Text className="text-xs text-amber-700 text-center">
+                  If the machine shows "Printer is shutdown", fix the cause then tap Restart Machine before retrying.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={handleFirmwareRestart}
+                disabled={restarting}
+                className={`rounded-2xl px-10 py-3.5 mb-3 flex-row items-center justify-center ${restarting ? 'bg-gray-300' : 'bg-[#2A5C9C]'}`}
+              >
+                {restarting
+                  ? <ActivityIndicator color="white" size="small" />
+                  : <Text className="text-white font-bold text-base">↺ Restart Machine</Text>}
+              </TouchableOpacity>
               <TouchableOpacity onPress={onClose} className="bg-[#C96B1A] rounded-2xl px-10 py-3.5">
                 <Text className="text-white font-bold text-base">Close</Text>
               </TouchableOpacity>
@@ -742,7 +772,6 @@ export default function WardDetailScreen() {
   const [checkingMachine, setCheckingMachine] = useState(false)
   const [showDispenseModal, setShowDispenseModal] = useState(false)
   const [dispenseJobs, setDispenseJobs]     = useState<DispenseJob[]>([])
-  const dispenseEventsRef = useRef<DispenseProgressEvent[]>([])
 
   const insets = useSafeAreaInsets()
   const routeWardId = typeof id === 'string' ? id : ''
@@ -1048,12 +1077,31 @@ export default function WardDetailScreen() {
         `Status: ${status.state}\n${status.message}\n\nPlease check the dispenser before proceeding.`,
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Proceed anyway', onPress: buildAndOpenModal },
+          {
+            text: 'Proceed anyway',
+            onPress: async () => {
+              try {
+                await buildAndOpenModal()
+              } catch (err) {
+                Alert.alert(
+                  'Cabinet not stocked',
+                  err instanceof Error ? err.message : 'Cannot start dispense.',
+                )
+              }
+            },
+          },
         ],
       )
       return
     }
-    buildAndOpenModal()
+    try {
+      await buildAndOpenModal()
+    } catch (err) {
+      Alert.alert(
+        'Cabinet not stocked',
+        err instanceof Error ? err.message : 'Cannot start dispense.',
+      )
+    }
   }
 
   const buildAndOpenModal = async () => {
@@ -1061,7 +1109,7 @@ export default function WardDetailScreen() {
     const selectedIds = [...selectedPatients]
     const pendingForSlot = activeDispense.pending.filter((c) => selectedIds.includes(c.id))
 
-    // Fetch patient prescriptions + cabinet slots for selected patients
+    // Fetch patient prescriptions for selected patients
     const { data: prescriptions } = await supabase
       .from('patient_prescriptions')
       .select('patient_id, medicine_id, dose_quantity')
@@ -1071,35 +1119,52 @@ export default function WardDetailScreen() {
 
     const medicineIds = [...new Set((prescriptions ?? []).map((p) => p.medicine_id))]
 
-    const { data: slots } = await supabase
-      .from('cabinet_slots')
-      .select('medicine_id, cabinet_position')
-      .in('medicine_id', medicineIds)
+    // Look up slot_index (turntable bay, 1-based) from today's dispenser_slots.
+    // cabinet_position is the LED drawer index (0-based) — not the bay number.
+    const { data: todaySessions } = await supabase
+      .from('dispense_sessions')
+      .select('id, patient_id')
+      .in('patient_id', selectedIds)
+      .like('session_date', `${today}%`)
+
+    const sessionIds = (todaySessions ?? []).map((s) => s.id)
 
     const slotByMedicine = new Map<string, number>()
-    for (const s of slots ?? []) {
-      if (s.medicine_id) slotByMedicine.set(s.medicine_id, s.cabinet_position)
+    if (sessionIds.length > 0) {
+      const { data: dispenserSlots } = await supabase
+        .from('dispenser_slots')
+        .select('medicine_id, slot_index')
+        .in('session_id', sessionIds)
+        .in('medicine_id', medicineIds)
+      for (const s of dispenserSlots ?? []) {
+        if (s.medicine_id) slotByMedicine.set(s.medicine_id, s.slot_index)
+      }
     }
 
     // Build ordered job list — one job per patient (first medicine found)
     const jobs: DispenseJob[] = pendingForSlot.map((card) => {
       const rx = (prescriptions ?? []).find((p) => p.patient_id === card.id)
-      const cabinet = rx ? (slotByMedicine.get(rx.medicine_id) ?? 1) : 1
+      const mapped = rx ? slotByMedicine.get(rx.medicine_id) : undefined
+      if (!mapped) {
+        throw new Error(
+          `No turntable slot found for ${rx?.medicine_id ?? 'unknown medicine'}. ` +
+          'Complete the weekly fill for this patient before dispensing.',
+        )
+      }
       return {
         patientId:   card.id,
         patientName: card.name,
         room:        card.room,
-        cabinet,
+        cabinet:     mapped,
         tablets:     rx?.dose_quantity ?? card.tablets,
       }
     })
 
     setDispenseJobs(jobs)
-    dispenseEventsRef.current = []
     setShowDispenseModal(true)
   }
 
-  const runDispense = async () => {
+  const runDispense = async (onProgress: (event: DispenseProgressEvent) => void) => {
     const { data: session, error: sessionError } = await supabase
       .from('dispense_sessions')
       .insert({
@@ -1114,12 +1179,14 @@ export default function WardDetailScreen() {
 
     if (sessionError) throw sessionError
 
-    await runDispenseSequence(
-      dispenseJobs.map((j) => ({ cabinet: j.cabinet, patientName: j.patientName })),
-      (event) => {
-        dispenseEventsRef.current = [...dispenseEventsRef.current, event]
-        // Trigger re-render by updating a state value via the event stream
-        setDispenseJobs((prev) => [...prev])
+    await dispenseSequence(
+      dispenseJobs.map((j) => j.cabinet),
+      (msg) => {
+        const type: DispenseProgressEvent['type'] =
+          msg.startsWith('Homing') ? 'homing'
+          : msg.includes('dispensed') ? 'delivering'
+          : 'moving'
+        onProgress({ type, message: msg })
       },
     )
 
