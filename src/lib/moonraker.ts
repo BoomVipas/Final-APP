@@ -121,28 +121,25 @@ export async function setBayLed(
   bay: number,
   color: "green" | "red" | "white" | "blue" | "off",
 ): Promise<void> {
-  // LED disabled
-  // const drawer = bay - 1;
-  // if (color === "off") {
-  //   await gcodePost(`DRAWER_LED_OFF DRAWER=${drawer}`);
-  //   return;
-  // }
-  // const map = { green: [0, 1, 0], red: [1, 0, 0], white: [1, 1, 1], blue: [0, 0, 1] };
-  // const [r, g, b] = map[color];
-  // await gcodePost(`DRAWER_LED_ON DRAWER=${drawer} R=${r} G=${g} B=${b}`);
+  const drawer = bay - 1;
+  if (color === "off") {
+    await gcodePost(`DRAWER_LED_OFF DRAWER=${drawer}`);
+    return;
+  }
+  const map = { green: [0, 1, 0], red: [1, 0, 0], white: [1, 1, 1], blue: [0, 0, 1] };
+  const [r, g, b] = map[color];
+  await gcodePost(`DRAWER_LED_ON DRAWER=${drawer} R=${r} G=${g} B=${b}`);
 }
 
 export async function clearAllLeds(): Promise<void> {
-  // LED disabled
-  // await gcodePost("DRAWER_LED_ALL_OFF");
+  await gcodePost("DRAWER_LED_ALL_OFF");
 }
 
-// Turns off all cabinet LEDs then lights the active fill slot white.
+// Turns off all cabinet LEDs then lights the active fill slot red.
 // slotIndex is 1-based (1–8) — matches the BAY parameter sent to MOVE_TO_INSERT_BAY.
 export async function highlightFillSlot(slotIndex: number): Promise<void> {
-  // LED disabled
-  // await gcodePost("DRAWER_LED_ALL_OFF");
-  // await gcodePost(`DRAWER_LED_ON DRAWER=${slotIndex - 1} R=1 G=1 B=1`);
+  await gcodePost("DRAWER_LED_ALL_OFF");
+  await gcodePost(`DRAWER_LED_ON DRAWER=${slotIndex - 1} R=1 G=0 B=0`);
 }
 
 // ─── Main dispense sequence ───────────────────────────────────────────────────
@@ -177,9 +174,6 @@ export async function runDispenseSequence(
     await gcodePost(`MOVE_TO_BAY BAY=${bay}`);
     await delay(500);
 
-    // Light bay white only after the machine has physically arrived
-    // await setBayLed(bay, "white"); // LED disabled
-
     onProgress({
       type: "picking",
       bay,
@@ -201,9 +195,6 @@ export async function runDispenseSequence(
     await gcodePost("GRIPPER_OFF");
     await delay(300);
 
-    // Turn bay LED green after successful dispense
-    // await setBayLed(bay, "green"); // LED disabled
-
     onProgress({
       type: "delivering",
       bay,
@@ -214,7 +205,6 @@ export async function runDispenseSequence(
     });
   }
 
-  // await clearAllLeds(); // LED disabled
   onProgress({
     type: "done",
     message: "All medications dispensed successfully",
@@ -238,16 +228,9 @@ export async function dispenseFromCabinet(cabinet: number): Promise<void> {
       `Invalid cabinet number: ${cabinet}. Must be 1–${TOTAL_BAYS}`,
     );
   }
-  try {
-    await gcodePost(`MOVE_TO_BAY BAY=${cabinet}`);
-    await delay(500);
-    // await setBayLed(cabinet, "white"); // LED disabled
-    await gripperPickAndDeliver();
-    // await setBayLed(cabinet, "green"); // LED disabled
-  } catch (err) {
-    // await setBayLed(cabinet, "red").catch(() => {}); // LED disabled
-    throw err;
-  }
+  await gcodePost(`MOVE_TO_BAY BAY=${cabinet}`);
+  await delay(500);
+  await gripperPickAndDeliver();
 }
 
 /**
